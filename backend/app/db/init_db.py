@@ -1,5 +1,6 @@
 from sqlalchemy.orm import Session
 from models.user import User, UserRole
+from app.models.investing import Stock, Holding, Order, Watchlist
 from auth.utils import get_password_hash
 from database import Base, engine
 
@@ -33,6 +34,17 @@ def init_db():
             is_active=True
         )
         db.add(user)
+    
+    # Add some sample stocks if none exist
+    if db.query(Stock).count() == 0:
+        sample_stocks = [
+            Stock(symbol="AAPL", name="Apple Inc.", current_price=150.0),
+            Stock(symbol="GOOGL", name="Alphabet Inc.", current_price=2800.0),
+            Stock(symbol="MSFT", name="Microsoft Corporation", current_price=280.0),
+            Stock(symbol="AMZN", name="Amazon.com Inc.", current_price=3300.0),
+            Stock(symbol="TSLA", name="Tesla Inc.", current_price=900.0),
+        ]
+        db.add_all(sample_stocks)
     
     # Commit changes
     db.commit()

@@ -2,7 +2,7 @@ from sqlalchemy import Column, Integer, String, Float, ForeignKey, DateTime, Enu
 from sqlalchemy.orm import relationship
 from datetime import datetime
 import enum
-from .database import Base
+from database import Base
 
 class OrderType(str, enum.Enum):
     BUY = "BUY"
@@ -66,7 +66,7 @@ class Watchlist(Base):
     stock = relationship("Stock")
 
 # Add relationships to User model
-from .user import User
+from models.user import User
 
 User.holdings = relationship("Holding", back_populates="user")
 User.orders = relationship("Order", back_populates="user")
