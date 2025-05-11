@@ -24,6 +24,7 @@ plaid-python==14.0.0
 python-dotenv==1.0.0
 pydantic==2.5.2
 pydantic-settings==2.1.0
+email-validator==2.1.0.post1
 
 # Testing
 pytest==7.4.3

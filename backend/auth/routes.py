@@ -3,15 +3,16 @@ from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 from datetime import timedelta
 from typing import Optional
-from pydantic import BaseModel
+from pydantic import BaseModel, EmailStr
 
 from database import get_db
-from models.user import User
+from models.user import User, UserRole
 from auth.utils import (
     verify_password,
     create_access_token,
     ACCESS_TOKEN_EXPIRE_MINUTES,
-    verify_token
+    verify_token,
+    get_password_hash
 )
 
 router = APIRouter()
@@ -19,6 +20,41 @@ router = APIRouter()
 class LoginRequest(BaseModel):
     username: str
     password: str
+
+class RegisterRequest(BaseModel):
+    name: str
+    email: EmailStr
+    password: str
+
+@router.post("/register", status_code=status.HTTP_201_CREATED)
+async def register(
+    request: RegisterRequest,
+    db: Session = Depends(get_db)
+):
+    """Register a new user."""
+    # Check if user already exists
+    existing_user = db.query(User).filter(User.email == request.email).first()
+    if existing_user:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Email already registered"
+        )
+    
+    # Create new user
+    hashed_password = get_password_hash(request.password)
+    new_user = User(
+        email=request.email,
+        username=request.name,  # Using name as username for simplicity
+        hashed_password=hashed_password,
+        role=UserRole.USER,
+        is_active=True
+    )
+    
+    db.add(new_user)
+    db.commit()
+    db.refresh(new_user)
+    
+    return {"message": "User registered successfully"}
 
 @router.post("/login")
 async def login(

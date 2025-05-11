@@ -66,11 +66,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       });
 
       if (!response.ok) {
-        throw new Error("Login failed");
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.detail || "Login failed");
       }
 
       const data = await response.json();
       const { access_token, user: userData } = data;
+      
+      if (!access_token) {
+        throw new Error("No access token received");
+      }
       
       // Store token in localStorage
       localStorage.setItem('token', access_token);

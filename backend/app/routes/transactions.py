@@ -3,6 +3,7 @@ from sqlalchemy.orm import Session
 from typing import List
 from datetime import datetime
 from pydantic import BaseModel
+from models.models import TransactionType
 
 from database import get_db
 from models.transaction import Transaction
@@ -14,7 +15,7 @@ router = APIRouter()
 class TransactionBase(BaseModel):
     amount: float
     description: str
-    type: str
+    type: TransactionType
     category_id: int
 
 class TransactionCreate(TransactionBase):
