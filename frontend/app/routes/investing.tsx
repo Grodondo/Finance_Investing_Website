@@ -60,6 +60,11 @@ interface Watchlist {
   changePercent: number;
 }
 
+interface SearchResult {
+  symbol: string;
+  name: string;
+}
+
 export default function Investing() {
   const { user, logout, getAuthHeader, isAuthenticated } = useAuth();
   const navigate = useNavigate();
@@ -73,6 +78,11 @@ export default function Investing() {
   const [timeRange, setTimeRange] = useState<'1D' | '1W' | '1M' | '3M' | '1Y' | 'ALL'>('1M');
   const [orderType, setOrderType] = useState<'BUY' | 'SELL'>('BUY');
   const [orderQuantity, setOrderQuantity] = useState<number>(0);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
+  const [isSearching, setIsSearching] = useState(false);
+  const [isPlacingOrder, setIsPlacingOrder] = useState(false);
+  const [orderError, setOrderError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!isAuthenticated) {
@@ -188,9 +198,120 @@ export default function Investing() {
     }
   };
 
+  const handleSearch = async (query: string) => {
+    setSearchQuery(query);
+    if (query.length < 2) {
+      setSearchResults([]);
+      return;
+    }
+
+    setIsSearching(true);
+    try {
+      const authHeader = getAuthHeader();
+      if (!authHeader) return;
+
+      const response = await fetch(`/api/stocks/search?q=${encodeURIComponent(query)}`, {
+        headers: {
+          ...authHeader,
+          "Content-Type": "application/json"
+        }
+      });
+
+      if (!response.ok) {
+        throw new Error("Failed to search stocks");
+      }
+
+      const data = await response.json();
+      setSearchResults(data);
+    } catch (error) {
+      console.error("Error searching stocks:", error);
+      setSearchResults([]);
+    } finally {
+      setIsSearching(false);
+    }
+  };
+
+  const handleAddToWatchlist = async (symbol: string) => {
+    try {
+      const authHeader = getAuthHeader();
+      if (!authHeader) return;
+
+      const response = await fetch("/api/watchlist", {
+        method: "POST",
+        headers: {
+          ...authHeader,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({ symbol })
+      });
+
+      if (!response.ok) {
+        throw new Error("Failed to add to watchlist");
+      }
+
+      // Refresh watchlist
+      const watchlistResponse = await fetch("/api/watchlist", {
+        headers: {
+          ...authHeader,
+          "Content-Type": "application/json"
+        }
+      });
+
+      if (watchlistResponse.ok) {
+        const watchlistData = await watchlistResponse.json();
+        setWatchlist(watchlistData);
+      }
+
+      // Clear search
+      setSearchQuery("");
+      setSearchResults([]);
+    } catch (error) {
+      console.error("Error adding to watchlist:", error);
+      setError("Failed to add stock to watchlist");
+    }
+  };
+
+  const handleRemoveFromWatchlist = async (symbol: string) => {
+    try {
+      const authHeader = getAuthHeader();
+      if (!authHeader) return;
+
+      const response = await fetch(`/api/watchlist/${symbol}`, {
+        method: "DELETE",
+        headers: {
+          ...authHeader,
+          "Content-Type": "application/json"
+        }
+      });
+
+      if (!response.ok) {
+        throw new Error("Failed to remove from watchlist");
+      }
+
+      // Refresh watchlist
+      const watchlistResponse = await fetch("/api/watchlist", {
+        headers: {
+          ...authHeader,
+          "Content-Type": "application/json"
+        }
+      });
+
+      if (watchlistResponse.ok) {
+        const watchlistData = await watchlistResponse.json();
+        setWatchlist(watchlistData);
+      }
+    } catch (error) {
+      console.error("Error removing from watchlist:", error);
+      setError("Failed to remove stock from watchlist");
+    }
+  };
+
   const handleOrderSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedStock || orderQuantity <= 0) return;
+
+    setIsPlacingOrder(true);
+    setOrderError(null);
 
     try {
       const authHeader = getAuthHeader();
@@ -211,7 +332,8 @@ export default function Investing() {
       });
 
       if (!response.ok) {
-        throw new Error("Failed to place order");
+        const error = await response.json();
+        throw new Error(error.detail || "Failed to place order");
       }
 
       // Refresh portfolio data
@@ -229,8 +351,12 @@ export default function Investing() {
 
       // Reset order form
       setOrderQuantity(0);
+      setOrderType('BUY');
     } catch (error) {
       console.error("Error placing order:", error);
+      setOrderError(error instanceof Error ? error.message : "Failed to place order");
+    } finally {
+      setIsPlacingOrder(false);
     }
   };
 
@@ -324,6 +450,54 @@ export default function Investing() {
               )}
             </div>
 
+            {/* Stock Search */}
+            <div className="bg-white dark:bg-dark-surface rounded-lg shadow-sm p-6 mb-6">
+              <h2 className="text-lg font-medium text-gray-900 dark:text-dark-text mb-4">Search Stocks</h2>
+              <div className="relative">
+                <input
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => handleSearch(e.target.value)}
+                  placeholder="Search by symbol or company name..."
+                  className="w-full px-4 py-2 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-dark-surface text-gray-900 dark:text-dark-text focus:ring-2 focus:ring-indigo-500 dark:focus:ring-indigo-400 focus:border-transparent"
+                />
+                {isSearching && (
+                  <div className="absolute right-3 top-2">
+                    <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-indigo-600 dark:border-indigo-400"></div>
+                  </div>
+                )}
+                {searchResults.length > 0 && (
+                  <div className="absolute z-10 w-full mt-1 bg-white dark:bg-dark-surface rounded-md shadow-lg border border-gray-200 dark:border-gray-700">
+                    {searchResults.map((result) => (
+                      <div
+                        key={result.symbol}
+                        className="flex items-center justify-between p-3 hover:bg-gray-50 dark:hover:bg-gray-800 cursor-pointer"
+                        onClick={() => {
+                          handleStockSelect(result.symbol);
+                          setSearchQuery("");
+                          setSearchResults([]);
+                        }}
+                      >
+                        <div>
+                          <p className="text-sm font-medium text-gray-900 dark:text-dark-text">{result.symbol}</p>
+                          <p className="text-xs text-gray-500 dark:text-gray-400">{result.name}</p>
+                        </div>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleAddToWatchlist(result.symbol);
+                          }}
+                          className="px-3 py-1 text-xs font-medium text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300"
+                        >
+                          Add to Watchlist
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+
             {/* Stock Details */}
             {selectedStock && (
               <div className="bg-white dark:bg-dark-surface rounded-lg shadow-sm p-6">
@@ -343,6 +517,12 @@ export default function Investing() {
                       </span>
                     </div>
                   </div>
+                  <button
+                    onClick={() => handleRemoveFromWatchlist(selectedStock.symbol)}
+                    className="text-sm text-red-600 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300"
+                  >
+                    Remove from Watchlist
+                  </button>
                 </div>
                 {stockError && (
                   <div className="mb-4 p-4 bg-yellow-50 dark:bg-yellow-900/20 rounded-lg">
@@ -403,15 +583,28 @@ export default function Investing() {
                     <span>Estimated Cost</span>
                     <span>${(orderQuantity * (selectedStock?.currentPrice || 0)).toFixed(2)}</span>
                   </div>
+                  {orderError && (
+                    <div className="p-3 bg-red-50 dark:bg-red-900/20 rounded-md">
+                      <p className="text-sm text-red-600 dark:text-red-400">{orderError}</p>
+                    </div>
+                  )}
                   <button
                     type="submit"
+                    disabled={isPlacingOrder || orderQuantity <= 0}
                     className={`w-full py-2 px-4 rounded-md text-sm font-medium text-white ${
                       orderType === 'BUY'
                         ? 'bg-green-600 hover:bg-green-700 dark:bg-green-500 dark:hover:bg-green-400'
                         : 'bg-red-600 hover:bg-red-700 dark:bg-red-500 dark:hover:bg-red-400'
-                    }`}
+                    } disabled:opacity-50 disabled:cursor-not-allowed`}
                   >
-                    {orderType} {selectedStock.symbol}
+                    {isPlacingOrder ? (
+                      <div className="flex items-center justify-center">
+                        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                        Processing...
+                      </div>
+                    ) : (
+                      `${orderType} ${selectedStock.symbol}`
+                    )}
                   </button>
                 </form>
               </div>
@@ -455,7 +648,7 @@ export default function Investing() {
                   ))}
                 </div>
               ) : (
-                <p className="text-gray-500 dark:text-gray-400 text-sm">No stocks in watchlist.</p>
+                <p className="text-gray-500 dark:text-gray-400 text-sm">No stocks in watchlist. Use the search above to add stocks.</p>
               )}
             </div>
 
