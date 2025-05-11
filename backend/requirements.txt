@@ -1,0 +1,30 @@
+# Web Framework and Server
+fastapi==0.104.1
+uvicorn==0.24.0
+
+# Database
+sqlalchemy==2.0.23
+psycopg2-binary==2.9.9
+alembic==1.12.1
+
+# Authentication and Security
+python-jose[cryptography]==3.3.0
+passlib[bcrypt]==1.7.4
+bcrypt==4.0.1
+python-multipart==0.0.6
+
+# External Services
+plaid-python==14.0.0
+
+# Machine Learning (consider removing if not needed)
+# transformers==4.35.2
+# torch==2.1.1
+
+# Configuration and Environment
+python-dotenv==1.0.0
+pydantic==2.5.2
+pydantic-settings==2.1.0
+
+# Testing
+pytest==7.4.3
+httpx==0.25.2 

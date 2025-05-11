@@ -1,0 +1,3 @@
+BACKEND
+http://localhost:8080 -> Adminer 
+http://localhost:5050 -> pgAdmin 
