@@ -3,12 +3,11 @@ from sqlalchemy.orm import Session
 from typing import List
 from datetime import datetime
 from pydantic import BaseModel
-from models.models import TransactionType
 
-from database import get_db
-from models.transaction import Transaction
-from models.user import User
-from auth.utils import verify_token
+from ..db.database import get_db
+from ..models.transaction import Transaction, TransactionType
+from ..models.user import User
+from ..auth.utils import verify_token
 
 router = APIRouter()
 

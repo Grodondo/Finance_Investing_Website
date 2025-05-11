@@ -30,6 +30,7 @@ client = plaid_api.PlaidApi(api_client)
 class PlaidService:
     @staticmethod
     async def create_link_token(user_id: str):
+        """Create a link token for Plaid Link initialization."""
         request = LinkTokenCreateRequest(
             user=LinkTokenCreateRequestUser(
                 client_user_id=user_id
@@ -44,6 +45,7 @@ class PlaidService:
 
     @staticmethod
     async def exchange_public_token(public_token: str):
+        """Exchange a public token for an access token."""
         request = ItemPublicTokenExchangeRequest(
             public_token=public_token
         )
@@ -52,6 +54,7 @@ class PlaidService:
 
     @staticmethod
     async def get_account_balance(access_token: str):
+        """Get account balances for the given access token."""
         request = AccountsBalanceGetRequest(
             access_token=access_token
         )
@@ -60,6 +63,7 @@ class PlaidService:
 
     @staticmethod
     async def get_transactions(access_token: str, start_date: str, end_date: str):
+        """Get transactions for the given access token and date range."""
         request = TransactionsGetRequest(
             access_token=access_token,
             start_date=start_date,

@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session
 from typing import List
 from datetime import datetime, timedelta
 import yfinance as yf
-from ..database import get_db
+from ..db.database import get_db
 from ..auth.utils import verify_token
 from ..models.investing import Stock, Holding, Order, Watchlist, OrderType
 from ..schemas.investing import (

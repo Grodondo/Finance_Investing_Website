@@ -1,7 +1,7 @@
 from sqlalchemy import Boolean, Column, Integer, String, Enum
 from sqlalchemy.orm import relationship
 import enum
-from database import Base
+from ..db.database import Base
 
 class UserRole(str, enum.Enum):
     ADMIN = "admin"
@@ -20,4 +20,7 @@ class User(Base):
     # Relationships
     transactions = relationship("Transaction", back_populates="user")
     budgets = relationship("Budget", back_populates="user")
-    categories = relationship("Category", back_populates="user") 
+    categories = relationship("Category", back_populates="user")
+    holdings = relationship("Holding", back_populates="user")
+    orders = relationship("Order", back_populates="user")
+    watchlist = relationship("Watchlist", back_populates="user") 

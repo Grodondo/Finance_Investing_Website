@@ -1,8 +1,8 @@
 from sqlalchemy.orm import Session
-from models.user import User, UserRole
-from app.models.investing import Stock, Holding, Order, Watchlist
-from auth.utils import get_password_hash
-from database import Base, engine
+from ..models.user import User, UserRole
+from ..models.investing import Stock, Holding, Order, Watchlist
+from ..auth.utils import get_password_hash
+from .database import Base, engine
 
 def init_db():
     # Create tables

@@ -4,9 +4,13 @@ from fastapi.security import OAuth2PasswordBearer
 from dotenv import load_dotenv
 import os
 from app.db.init_db import init_db
+from app.db.database import engine, Base
 
 # Load environment variables
 load_dotenv()
+
+# Create database tables
+Base.metadata.create_all(bind=engine)
 
 app = FastAPI(
     title="AI-Powered Personal Finance Manager",
@@ -32,13 +36,15 @@ async def startup_event():
     init_db()
 
 # Import and include routers
-from auth.routes import router as auth_router
+from app.routes.auth import router as auth_router
 from app.routes.transactions import router as transactions_router
 from app.routes.insights import router as insights_router
+from app.routes.investing import router as investing_router
 
 app.include_router(auth_router, prefix="/api/auth", tags=["auth"])
 app.include_router(transactions_router, prefix="/api", tags=["transactions"])
 app.include_router(insights_router, prefix="/api", tags=["insights"])
+app.include_router(investing_router, prefix="/api", tags=["investing"])
 
 @app.get("/")
 async def root():
