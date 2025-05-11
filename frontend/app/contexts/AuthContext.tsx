@@ -12,25 +12,43 @@ interface AuthContextType {
   login: (email: string, password: string) => Promise<void>;
   logout: () => void;
   loading: boolean;
+  getAuthHeader: () => { Authorization: string } | undefined;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
+  const [token, setToken] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     // Check for existing session
     const checkAuth = async () => {
       try {
-        const response = await fetch("/api/auth/me");
-        if (response.ok) {
-          const userData = await response.json();
-          setUser(userData);
+        const storedToken = localStorage.getItem('token');
+        if (storedToken) {
+          setToken(storedToken);
+          const response = await fetch("/api/auth/me", {
+            headers: {
+              Authorization: `Bearer ${storedToken}`
+            }
+          });
+          if (response.ok) {
+            const userData = await response.json();
+            setUser(userData);
+          } else {
+            // Token is invalid or expired
+            localStorage.removeItem('token');
+            setToken(null);
+            setUser(null);
+          }
         }
       } catch (error) {
         console.error("Auth check failed:", error);
+        localStorage.removeItem('token');
+        setToken(null);
+        setUser(null);
       } finally {
         setLoading(false);
       }
@@ -51,7 +69,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         throw new Error("Login failed");
       }
 
-      const userData = await response.json();
+      const data = await response.json();
+      const { access_token, user: userData } = data;
+      
+      // Store token in localStorage
+      localStorage.setItem('token', access_token);
+      setToken(access_token);
       setUser(userData);
     } catch (error) {
       console.error("Login error:", error);
@@ -61,11 +84,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const logout = async () => {
     try {
-      await fetch("/api/auth/logout", { method: "POST" });
+      if (token) {
+        await fetch("/api/auth/logout", {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${token}`
+          }
+        });
+      }
+      localStorage.removeItem('token');
+      setToken(null);
       setUser(null);
     } catch (error) {
       console.error("Logout error:", error);
     }
+  };
+
+  const getAuthHeader = () => {
+    if (!token) return undefined;
+    return { Authorization: `Bearer ${token}` };
   };
 
   return (
@@ -76,6 +113,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         login,
         logout,
         loading,
+        getAuthHeader,
       }}
     >
       {children}

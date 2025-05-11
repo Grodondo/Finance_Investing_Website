@@ -39,7 +39,7 @@ interface AIInsight {
 }
 
 export default function Dashboard() {
-  const { user, logout } = useAuth();
+  const { user, logout, getAuthHeader } = useAuth();
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [insights, setInsights] = useState<AIInsight[]>([]);
   const [loading, setLoading] = useState(true);
@@ -47,13 +47,28 @@ export default function Dashboard() {
   useEffect(() => {
     const fetchData = async () => {
       try {
+        const authHeader = getAuthHeader();
+        if (!authHeader) {
+          throw new Error("Not authenticated");
+        }
+
         // Fetch transactions
-        const transactionsResponse = await fetch("/api/transactions");
+        const transactionsResponse = await fetch("/api/transactions", {
+          headers: authHeader
+        });
+        if (!transactionsResponse.ok) {
+          throw new Error("Failed to fetch transactions");
+        }
         const transactionsData = await transactionsResponse.json();
         setTransactions(transactionsData);
 
         // Fetch AI insights
-        const insightsResponse = await fetch("/api/insights");
+        const insightsResponse = await fetch("/api/insights", {
+          headers: authHeader
+        });
+        if (!insightsResponse.ok) {
+          throw new Error("Failed to fetch insights");
+        }
         const insightsData = await insightsResponse.json();
         setInsights(insightsData);
       } catch (error) {
@@ -64,7 +79,7 @@ export default function Dashboard() {
     };
 
     fetchData();
-  }, []);
+  }, [getAuthHeader]);
 
   const chartData = {
     labels: transactions.map((t) => new Date(t.date).toLocaleDateString()),
