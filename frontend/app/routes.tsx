@@ -1,0 +1,45 @@
+import React from "react";
+import { createBrowserRouter } from "react-router-dom";
+import Root from "./root";
+import ErrorPage from "./components/ErrorPage";
+import Index from "./routes/_index";
+import Login from "./routes/login";
+import Register from "./routes/register";
+import Dashboard from "./routes/dashboard";
+import Investing from "./routes/investing";
+import About from "./routes/about";
+
+export const router = createBrowserRouter([
+  {
+    path: "/",
+    element: <Root />,
+    errorElement: <ErrorPage />,
+    children: [
+      {
+        index: true,
+        element: <Index />,
+      },
+      {
+        path: "login",
+        element: <Login />,
+      },
+      {
+        path: "register",
+        element: <Register />,
+      },
+      {
+        path: "dashboard",
+        element: <Dashboard />,
+      },
+      {
+        path: "investing",
+        element: <Investing />,
+        errorElement: <ErrorPage />,
+      },
+      {
+        path: "about",
+        element: <About />,
+      },
+    ],
+  },
+]); 

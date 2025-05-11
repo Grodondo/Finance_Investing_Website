@@ -1,12 +1,11 @@
 import { Outlet, useNavigate, useLocation } from "react-router-dom";
 import { useEffect } from "react";
-import { useAuth, AuthProvider } from "./contexts/AuthContext";
-import { ThemeProvider } from "./contexts/ThemeContext";
+import { useAuth } from "./contexts/AuthContext";
 import Navbar from "./components/Navbar";
 import ThemeToggle from "./components/ThemeToggle";
 import "./app.css";
 
-function RootContent() {
+export default function Root() {
   const { isAuthenticated, loading } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
@@ -36,24 +35,5 @@ function RootContent() {
       <Outlet />
       <ThemeToggle />
     </div>
-  );
-}
-
-export default function Root() {
-  return (
-    <html lang="en">
-      <head>
-        <meta charSet="utf-8" />
-        <meta name="viewport" content="width=device-width, initial-scale=1" />
-        <title>Personal Finance Manager</title>
-      </head>
-      <body className="bg-white dark:bg-dark-bg text-gray-900 dark:text-dark-text">
-        <ThemeProvider>
-          <AuthProvider>
-            <RootContent />
-          </AuthProvider>
-        </ThemeProvider>
-      </body>
-    </html>
   );
 }

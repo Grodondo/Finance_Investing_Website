@@ -1,13 +1,12 @@
 import React from 'react'
 import ReactDOM from 'react-dom/client'
-import { createBrowserRouter, RouterProvider } from 'react-router-dom'
-import { routes } from './routes'
-
-const router = createBrowserRouter(routes)
+import { RouterProvider } from 'react-router-dom'
+import { router } from './routes.tsx'
+import App from './App'
 
 ReactDOM.hydrateRoot(
-  document,
+  document.getElementById('root')!,
   <React.StrictMode>
-    <RouterProvider router={router} />
+    <App />
   </React.StrictMode>
 ) 
