@@ -1,175 +1,173 @@
 # AI-Powered Personal Finance Manager
 
-A secure, full-stack web application for managing personal finances with AI-powered insights and automated transaction categorization.
-
-## Security Features
-
-- JWT-based authentication with secure token storage
-- Password hashing using bcrypt
-- CSRF protection
-- Rate limiting on authentication endpoints
-- Input validation and sanitization
-- Secure HTTP headers
-- XSS protection
-- SQL injection prevention
-- Environment variable management
-- Regular security audits
-- Error handling with no sensitive data exposure
+A modern, full-stack personal finance management application that helps users track expenses, manage investments, and get AI-powered financial insights.
 
 ## Features
 
-- User authentication with JWT and two-factor authentication
-- Real-time bank account integration via Plaid API
-- AI-powered expense categorization
-- Budget planning and tracking
-- Savings goals management
-- Interactive dashboard with financial insights
-- Responsive and modern UI
-- Comprehensive error handling and user feedback
+### Core Features
+- 💰 Transaction tracking and categorization
+- 📊 Financial insights and analytics
+- 📈 Investment portfolio management
+- 🔍 Stock market data integration
+- 📱 Modern, responsive UI with dark mode support
+- 🔒 Secure authentication and authorization
+- 🤖 AI-powered financial recommendations
 
-## Tech Stack
+### Technical Features
+- 🚀 FastAPI backend with async support
+- ⚛️ React frontend with TypeScript
+- 📦 PostgreSQL database with SQLAlchemy ORM
+- 🔄 Real-time stock data via Yahoo Finance API
+- 🎨 TailwindCSS for modern UI design
+- 🔐 JWT-based authentication
+- 🐳 Docker containerization
+- 📈 Database migrations with Alembic
 
-- **Backend**: Python (FastAPI)
-- **Frontend**: React with TypeScript
-- **Database**: PostgreSQL
-- **Styling**: Tailwind CSS
-- **AI**: Hugging Face Transformers
-- **Bank Integration**: Plaid API
-- **Charts**: Chart.js
-- **Security**: JWT, bcrypt, CORS, Helmet
+## Project Structure
 
-## Prerequisites
+```
+Personal_Finance_Manager/
+├── backend/
+│   ├── app/
+│   │   ├── models/         # Database models
+│   │   ├── routes/         # API endpoints
+│   │   ├── schemas/        # Pydantic models
+│   │   ├── auth/           # Authentication logic
+│   │   └── db/            # Database configuration
+│   ├── alembic/           # Database migrations
+│   ├── main.py           # FastAPI application
+│   └── requirements.txt   # Python dependencies
+├── frontend/
+│   ├── app/
+│   │   ├── components/    # Reusable UI components
+│   │   ├── contexts/      # React contexts
+│   │   ├── routes/        # Page components
+│   │   └── utils/         # Utility functions
+│   ├── public/           # Static assets
+│   └── package.json      # Node.js dependencies
+└── docker-compose.yml    # Docker services configuration
+```
 
+## Getting Started
+
+### Prerequisites
 - Python 3.8+
-- Node.js 14+
-- PostgreSQL
-- Plaid API credentials
-- Hugging Face API token
+- Node.js 16+
+- Docker and Docker Compose
+- PostgreSQL (if running locally)
 
-## Security Setup
+### Development Setup
 
-1. Generate a strong secret key:
+1. Clone the repository:
 ```bash
-python -c "import secrets; print(secrets.token_hex(32))"
+git clone <repository-url>
+cd Personal_Finance_Manager
 ```
 
-2. Set up secure environment variables:
+2. Set up the backend:
 ```bash
-# Backend (.env)
-DATABASE_URL=postgresql://user:password@localhost:5432/personal_finance
-SECRET_KEY=<generated-secret-key>
-PLAID_CLIENT_ID=your-plaid-client-id
-PLAID_SECRET=your-plaid-secret
-PLAID_ENV=sandbox
-HUGGING_FACE_TOKEN=your-hugging-face-token
-CORS_ORIGINS=http://localhost:3000
-RATE_LIMIT_PER_MINUTE=60
-JWT_ALGORITHM=HS256
-JWT_EXPIRATION_MINUTES=30
-
-# Frontend (.env)
-REACT_APP_API_URL=http://localhost:8000
-REACT_APP_ENV=development
-```
-
-## Setup Instructions
-
-### Backend Setup
-
-1. Create a virtual environment:
-```bash
+# Create and activate virtual environment
 python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
-```
+source venv/bin/activate  # On Windows: .\venv\Scripts\activate
 
-2. Install dependencies:
-```bash
+# Install dependencies
+cd backend
 pip install -r requirements.txt
+
+# Set up environment variables
+cp .env.example .env  # Create and configure your .env file
+
+# Initialize the database
+python -m app.db.init_db
 ```
 
-3. Set up environment variables:
-```bash
-cp .env.example .env
-# Edit .env with your secure credentials
-```
-
-4. Initialize the database:
-```bash
-alembic upgrade head
-```
-
-5. Start the backend server:
-```bash
-uvicorn backend.main:app --reload
-```
-
-### Frontend Setup
-
-1. Install dependencies:
+3. Set up the frontend:
 ```bash
 cd frontend
 npm install
 ```
 
-2. Set up environment variables:
+4. Start the development servers:
+
+Using Docker (recommended):
 ```bash
-cp .env.example .env
-# Edit .env with your backend API URL
+docker-compose up
 ```
 
-3. Start the development server:
+Or manually:
 ```bash
-npm start
+# Terminal 1 - Backend
+cd backend
+uvicorn main:app --reload
+
+# Terminal 2 - Frontend
+cd frontend
+npm run dev
 ```
 
-## Security Best Practices
+The application will be available at:
+- Frontend: http://localhost:5173
+- Backend API: http://localhost:8000
+- API Documentation: http://localhost:8000/docs
+- PgAdmin: http://localhost:5050
 
-1. **Environment Variables**
-   - Never commit `.env` files
-   - Use strong, unique secrets
-   - Rotate secrets regularly
-   - Use different secrets for development and production
-
-2. **Authentication**
-   - Implement rate limiting on login attempts
-   - Use secure password requirements
-   - Implement account lockout after failed attempts
-   - Use secure session management
-
-3. **API Security**
-   - Validate all input data
-   - Implement proper CORS policies
-   - Use HTTPS in production
-   - Implement request rate limiting
-   - Sanitize error messages
-
-4. **Database Security**
-   - Use parameterized queries
-   - Implement proper access controls
-   - Regular backups
-   - Encrypt sensitive data
-
-5. **Frontend Security**
-   - Implement Content Security Policy
-   - Use secure HTTP headers
-   - Sanitize user input
-   - Implement proper error handling
-   - Use secure cookie settings
-
-## Error Handling
-
-The application implements comprehensive error handling:
-
-- Frontend error boundaries for graceful error recovery
-- User-friendly error messages
-- Detailed error logging for debugging
-- No sensitive data exposure in error messages
-- Proper HTTP status codes
-- Consistent error response format
+### Default Credentials
+- Admin: admin@example.com / admin
+- User: user@example.com / user123
 
 ## API Documentation
 
-The API documentation is available at `http://localhost:8000/docs` when running the backend server.
+The API documentation is available at `/docs` when running the backend server. It provides:
+- Interactive API documentation
+- Request/response schemas
+- Authentication requirements
+- Example requests
+
+## Database Management
+
+### Migrations
+```bash
+# Create a new migration
+alembic revision --autogenerate -m "description"
+
+# Apply migrations
+alembic upgrade head
+```
+
+### Database Access
+- Direct: localhost:5432
+- PgAdmin: localhost:5050
+  - Email: admin@admin.com
+  - Password: admin
+
+## Deployment
+
+### Production Build
+
+1. Build the frontend:
+```bash
+cd frontend
+npm run build
+```
+
+2. Build and run with Docker:
+```bash
+docker-compose -f docker-compose.prod.yml up --build
+```
+
+### Environment Variables
+
+Required environment variables:
+```
+# Backend
+DATABASE_URL=postgresql://user:password@host:5432/dbname
+SECRET_KEY=your-secret-key
+ALGORITHM=HS256
+ACCESS_TOKEN_EXPIRE_MINUTES=30
+
+# Frontend
+VITE_API_URL=http://localhost:8000
+```
 
 ## Contributing
 
@@ -179,10 +177,15 @@ The API documentation is available at `http://localhost:8000/docs` when running 
 4. Push to the branch
 5. Create a Pull Request
 
-## Security Reporting
-
-If you discover a security vulnerability, please report it to security@example.com. Do not disclose security-related issues publicly.
-
 ## License
 
-This project is licensed under the MIT License - see the LICENSE file for details. 
+This project is licensed under the MIT License - see the LICENSE file for details.
+
+## Acknowledgments
+
+- FastAPI for the backend framework
+- React Router for frontend routing
+- TailwindCSS for styling
+- Yahoo Finance API for stock data
+- PostgreSQL for database
+- Docker for containerization 
