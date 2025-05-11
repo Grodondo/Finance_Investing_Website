@@ -68,6 +68,8 @@ export default function Investing() {
   const [watchlist, setWatchlist] = useState<Watchlist[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [stockError, setStockError] = useState<string | null>(null);
+  const [isLoadingStock, setIsLoadingStock] = useState(false);
   const [timeRange, setTimeRange] = useState<'1D' | '1W' | '1M' | '3M' | '1Y' | 'ALL'>('1M');
   const [orderType, setOrderType] = useState<'BUY' | 'SELL'>('BUY');
   const [orderQuantity, setOrderQuantity] = useState<number>(0);
@@ -86,7 +88,7 @@ export default function Investing() {
         }
 
         // Fetch portfolio data
-        const portfolioResponse = await fetch("/api/investing/portfolio", {
+        const portfolioResponse = await fetch("/api/portfolio", {
           headers: {
             ...authHeader,
             "Content-Type": "application/json"
@@ -101,7 +103,7 @@ export default function Investing() {
         setPortfolio(portfolioData);
 
         // Fetch watchlist
-        const watchlistResponse = await fetch("/api/investing/watchlist", {
+        const watchlistResponse = await fetch("/api/watchlist", {
           headers: {
             ...authHeader,
             "Content-Type": "application/json"
@@ -114,21 +116,6 @@ export default function Investing() {
 
         const watchlistData = await watchlistResponse.json();
         setWatchlist(watchlistData);
-
-        // Fetch initial stock data (e.g., AAPL)
-        const stockResponse = await fetch("/api/investing/stocks/AAPL", {
-          headers: {
-            ...authHeader,
-            "Content-Type": "application/json"
-          }
-        });
-
-        if (!stockResponse.ok) {
-          throw new Error("Failed to fetch stock data");
-        }
-
-        const stockData = await stockResponse.json();
-        setSelectedStock(stockData);
       } catch (error) {
         console.error("Error fetching data:", error);
         setError(error instanceof Error ? error.message : "An error occurred");
@@ -140,26 +127,36 @@ export default function Investing() {
     fetchData();
   }, [getAuthHeader, isAuthenticated, navigate]);
 
-  const handleLogout = async () => {
+  const fetchStockData = async (symbol: string, retryCount = 0) => {
     try {
-      await logout();
-      navigate("/login");
-    } catch (error) {
-      console.error("Logout error:", error);
-    }
-  };
+      setIsLoadingStock(true);
+      setStockError(null);
 
-  const handleStockSelect = async (symbol: string) => {
-    try {
       const authHeader = getAuthHeader();
       if (!authHeader) return;
 
-      const response = await fetch(`/api/investing/stocks/${symbol}`, {
+      const response = await fetch(`/api/stocks/${symbol}`, {
         headers: {
           ...authHeader,
           "Content-Type": "application/json"
         }
       });
+
+      if (response.status === 429) {
+        const data = await response.json();
+        // Extract retry time from error message
+        const retryMatch = data.detail?.match(/try again in (\d+) seconds/);
+        const retrySeconds = retryMatch ? parseInt(retryMatch[1]) : 30;
+        
+        if (retryCount < 3) {  // Max 3 retries
+          console.log(`Rate limited, retrying in ${retrySeconds} seconds (attempt ${retryCount + 1}/3)`);
+          setTimeout(() => fetchStockData(symbol, retryCount + 1), retrySeconds * 1000);
+          setStockError(`Rate limited. Retrying in ${retrySeconds} seconds...`);
+        } else {
+          setStockError("Unable to fetch stock data due to rate limits. Please try again later.");
+        }
+        return;
+      }
 
       if (!response.ok) {
         throw new Error("Failed to fetch stock data");
@@ -167,8 +164,27 @@ export default function Investing() {
 
       const stockData = await response.json();
       setSelectedStock(stockData);
+      setStockError(null);
     } catch (error) {
       console.error("Error fetching stock data:", error);
+      if (error instanceof Error && !error.message.includes("Rate limited")) {
+        setStockError("Failed to fetch stock data. Please try again later.");
+      }
+    } finally {
+      setIsLoadingStock(false);
+    }
+  };
+
+  const handleStockSelect = (symbol: string) => {
+    fetchStockData(symbol);
+  };
+
+  const handleLogout = async () => {
+    try {
+      await logout();
+      navigate("/login");
+    } catch (error) {
+      console.error("Logout error:", error);
     }
   };
 
@@ -180,7 +196,7 @@ export default function Investing() {
       const authHeader = getAuthHeader();
       if (!authHeader) return;
 
-      const response = await fetch("/api/investing/orders", {
+      const response = await fetch("/api/orders", {
         method: "POST",
         headers: {
           ...authHeader,
@@ -199,7 +215,7 @@ export default function Investing() {
       }
 
       // Refresh portfolio data
-      const portfolioResponse = await fetch("/api/investing/portfolio", {
+      const portfolioResponse = await fetch("/api/portfolio", {
         headers: {
           ...authHeader,
           "Content-Type": "application/json"
@@ -250,134 +266,94 @@ export default function Investing() {
           {/* Portfolio Overview */}
           <div className="col-span-12 lg:col-span-8">
             <div className="bg-white dark:bg-dark-surface rounded-lg shadow-sm p-6 mb-6">
-              <div className="flex justify-between items-center mb-6">
-                <h2 className="text-lg font-medium text-gray-900 dark:text-dark-text">Portfolio Overview</h2>
-                <div className="flex space-x-2">
-                  {(['1D', '1W', '1M', '3M', '1Y', 'ALL'] as const).map((range) => (
-                    <button
-                      key={range}
-                      onClick={() => setTimeRange(range)}
-                      className={`px-3 py-1 text-sm font-medium rounded-md ${
-                        timeRange === range
-                          ? 'bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300'
-                          : 'text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800'
-                      }`}
-                    >
-                      {range}
-                    </button>
-                  ))}
+              <h2 className="text-lg font-medium text-gray-900 dark:text-dark-text mb-6">Portfolio Overview</h2>
+              {loading ? (
+                <div className="flex justify-center py-8">
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600 dark:border-indigo-400"></div>
                 </div>
-              </div>
-              {portfolio && (
+              ) : portfolio ? (
                 <div className="space-y-4">
                   <div className="flex items-baseline space-x-4">
                     <span className="text-3xl font-bold text-gray-900 dark:text-dark-text">
-                      ${portfolio.totalValue.toLocaleString()}
+                      ${portfolio.totalValue?.toLocaleString() ?? '0.00'}
                     </span>
                     <span className={`text-lg font-medium ${
-                      portfolio.dailyChange >= 0
+                      (portfolio.dailyChange ?? 0) >= 0
                         ? 'text-green-600 dark:text-green-400'
                         : 'text-red-600 dark:text-red-400'
                     }`}>
-                      {portfolio.dailyChange >= 0 ? '+' : ''}{portfolio.dailyChange.toFixed(2)} ({portfolio.dailyChangePercent.toFixed(2)}%)
+                      {(portfolio.dailyChange ?? 0) >= 0 ? '+' : ''}{(portfolio.dailyChange ?? 0).toFixed(2)} ({(portfolio.dailyChangePercent ?? 0).toFixed(2)}%)
                     </span>
                   </div>
-                  {/* Portfolio Chart would go here */}
+                  <div className="mt-6">
+                    <h3 className="text-md font-medium text-gray-900 dark:text-dark-text mb-4">Your Holdings</h3>
+                    {portfolio.holdings?.length > 0 ? (
+                      <div className="space-y-4">
+                        {portfolio.holdings.map((holding) => (
+                          <div
+                            key={holding.symbol}
+                            className="flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-800 rounded-lg cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700"
+                            onClick={() => handleStockSelect(holding.symbol)}
+                          >
+                            <div>
+                              <p className="text-sm font-medium text-gray-900 dark:text-dark-text">{holding.symbol}</p>
+                              <p className="text-xs text-gray-500 dark:text-gray-400">{holding.shares} shares @ ${holding.averagePrice?.toFixed(2) ?? '0.00'}</p>
+                            </div>
+                            <div className="text-right">
+                              <p className="text-sm font-medium text-gray-900 dark:text-dark-text">
+                                ${holding.totalValue?.toFixed(2) ?? '0.00'}
+                              </p>
+                              <p className={`text-xs ${
+                                (holding.gainLoss ?? 0) >= 0
+                                  ? 'text-green-600 dark:text-green-400'
+                                  : 'text-red-600 dark:text-red-400'
+                              }`}>
+                                {(holding.gainLoss ?? 0) >= 0 ? '+' : ''}{(holding.gainLoss ?? 0).toFixed(2)} ({(holding.gainLossPercent ?? 0).toFixed(2)}%)
+                              </p>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="text-gray-500 dark:text-gray-400 text-sm">No holdings yet.</p>
+                    )}
+                  </div>
                 </div>
+              ) : (
+                <p className="text-gray-500 dark:text-gray-400 text-sm">Unable to load portfolio data. Please try again later.</p>
               )}
             </div>
 
-            {/* Stock Chart */}
+            {/* Stock Details */}
             {selectedStock && (
-              <div className="bg-white dark:bg-dark-surface rounded-lg shadow-sm p-6 mb-6">
+              <div className="bg-white dark:bg-dark-surface rounded-lg shadow-sm p-6">
                 <div className="flex justify-between items-center mb-6">
                   <div>
                     <h2 className="text-lg font-medium text-gray-900 dark:text-dark-text">{selectedStock.name} ({selectedStock.symbol})</h2>
                     <div className="flex items-baseline space-x-4 mt-1">
                       <span className="text-2xl font-bold text-gray-900 dark:text-dark-text">
-                        ${selectedStock.currentPrice.toFixed(2)}
+                        ${selectedStock.currentPrice?.toFixed(2) ?? '0.00'}
                       </span>
                       <span className={`text-lg font-medium ${
-                        selectedStock.change >= 0
+                        (selectedStock.change ?? 0) >= 0
                           ? 'text-green-600 dark:text-green-400'
                           : 'text-red-600 dark:text-red-400'
                       }`}>
-                        {selectedStock.change >= 0 ? '+' : ''}{selectedStock.change.toFixed(2)} ({selectedStock.changePercent.toFixed(2)}%)
+                        {(selectedStock.change ?? 0) >= 0 ? '+' : ''}{(selectedStock.change ?? 0).toFixed(2)} ({(selectedStock.changePercent ?? 0).toFixed(2)}%)
                       </span>
                     </div>
                   </div>
-                  <div className="flex space-x-2">
-                    {(['1D', '1W', '1M', '3M', '1Y', 'ALL'] as const).map((range) => (
-                      <button
-                        key={range}
-                        onClick={() => setTimeRange(range)}
-                        className={`px-3 py-1 text-sm font-medium rounded-md ${
-                          timeRange === range
-                            ? 'bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300'
-                            : 'text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800'
-                        }`}
-                      >
-                        {range}
-                      </button>
-                    ))}
+                </div>
+                {stockError && (
+                  <div className="mb-4 p-4 bg-yellow-50 dark:bg-yellow-900/20 rounded-lg">
+                    <p className="text-sm text-yellow-700 dark:text-yellow-300">{stockError}</p>
                   </div>
-                </div>
-                <div className="h-96">
-                  <Line
-                    data={{
-                      labels: selectedStock.historicalData.map(d => d.date),
-                      datasets: [{
-                        label: selectedStock.symbol,
-                        data: selectedStock.historicalData.map(d => d.price),
-                        borderColor: selectedStock.change >= 0 ? 'rgb(34, 197, 94)' : 'rgb(239, 68, 68)',
-                        backgroundColor: selectedStock.change >= 0 ? 'rgba(34, 197, 94, 0.1)' : 'rgba(239, 68, 68, 0.1)',
-                        tension: 0.4,
-                        fill: true,
-                      }]
-                    }}
-                    options={{
-                      responsive: true,
-                      maintainAspectRatio: false,
-                      plugins: {
-                        legend: {
-                          display: false,
-                        },
-                        tooltip: {
-                          mode: "index" as const,
-                          intersect: false,
-                        },
-                      },
-                      scales: {
-                        y: {
-                          beginAtZero: false,
-                          grid: {
-                            color: (context) => {
-                              const isDarkMode = document.documentElement.classList.contains('dark');
-                              return isDarkMode ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.1)';
-                            }
-                          },
-                          ticks: {
-                            color: (context) => {
-                              const isDarkMode = document.documentElement.classList.contains('dark');
-                              return isDarkMode ? 'rgba(255, 255, 255, 0.7)' : 'rgba(0, 0, 0, 0.7)';
-                            }
-                          }
-                        },
-                        x: {
-                          grid: {
-                            display: false,
-                          },
-                          ticks: {
-                            color: (context) => {
-                              const isDarkMode = document.documentElement.classList.contains('dark');
-                              return isDarkMode ? 'rgba(255, 255, 255, 0.7)' : 'rgba(0, 0, 0, 0.7)';
-                            }
-                          }
-                        }
-                      }
-                    }}
-                  />
-                </div>
+                )}
+                {isLoadingStock && (
+                  <div className="flex justify-center py-8">
+                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600 dark:border-indigo-400"></div>
+                  </div>
+                )}
               </div>
             )}
 
@@ -444,50 +420,19 @@ export default function Investing() {
 
           {/* Sidebar */}
           <div className="col-span-12 lg:col-span-4 space-y-6">
-            {/* Holdings */}
-            <div className="bg-white dark:bg-dark-surface rounded-lg shadow-sm p-6">
-              <h2 className="text-lg font-medium text-gray-900 dark:text-dark-text mb-4">Holdings</h2>
-              {portfolio?.holdings.length ? (
-                <div className="space-y-4">
-                  {portfolio.holdings.map((holding) => (
-                    <div
-                      key={holding.symbol}
-                      className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-800 rounded-lg cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700"
-                      onClick={() => handleStockSelect(holding.symbol)}
-                    >
-                      <div>
-                        <p className="text-sm font-medium text-gray-900 dark:text-dark-text">{holding.symbol}</p>
-                        <p className="text-xs text-gray-500 dark:text-gray-400">{holding.shares} shares</p>
-                      </div>
-                      <div className="text-right">
-                        <p className="text-sm font-medium text-gray-900 dark:text-dark-text">
-                          ${holding.totalValue.toFixed(2)}
-                        </p>
-                        <p className={`text-xs ${
-                          holding.gainLoss >= 0
-                            ? 'text-green-600 dark:text-green-400'
-                            : 'text-red-600 dark:text-red-400'
-                        }`}>
-                          {holding.gainLoss >= 0 ? '+' : ''}{holding.gainLoss.toFixed(2)} ({holding.gainLossPercent.toFixed(2)}%)
-                        </p>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <p className="text-gray-500 dark:text-gray-400 text-sm">No holdings yet.</p>
-              )}
-            </div>
-
             {/* Watchlist */}
             <div className="bg-white dark:bg-dark-surface rounded-lg shadow-sm p-6">
               <h2 className="text-lg font-medium text-gray-900 dark:text-dark-text mb-4">Watchlist</h2>
-              {watchlist.length ? (
+              {loading ? (
+                <div className="flex justify-center py-4">
+                  <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-indigo-600 dark:border-indigo-400"></div>
+                </div>
+              ) : watchlist?.length > 0 ? (
                 <div className="space-y-4">
                   {watchlist.map((stock) => (
                     <div
                       key={stock.symbol}
-                      className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-800 rounded-lg cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700"
+                      className="flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-800 rounded-lg cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700"
                       onClick={() => handleStockSelect(stock.symbol)}
                     >
                       <div>
@@ -496,14 +441,14 @@ export default function Investing() {
                       </div>
                       <div className="text-right">
                         <p className="text-sm font-medium text-gray-900 dark:text-dark-text">
-                          ${stock.currentPrice.toFixed(2)}
+                          ${stock.currentPrice?.toFixed(2) ?? '0.00'}
                         </p>
                         <p className={`text-xs ${
-                          stock.change >= 0
+                          (stock.change ?? 0) >= 0
                             ? 'text-green-600 dark:text-green-400'
                             : 'text-red-600 dark:text-red-400'
                         }`}>
-                          {stock.change >= 0 ? '+' : ''}{stock.change.toFixed(2)} ({stock.changePercent.toFixed(2)}%)
+                          {(stock.change ?? 0) >= 0 ? '+' : ''}{(stock.change ?? 0).toFixed(2)} ({(stock.changePercent ?? 0).toFixed(2)}%)
                         </p>
                       </div>
                     </div>
@@ -512,6 +457,15 @@ export default function Investing() {
               ) : (
                 <p className="text-gray-500 dark:text-gray-400 text-sm">No stocks in watchlist.</p>
               )}
+            </div>
+
+            {/* Note about stock data */}
+            <div className="bg-yellow-50 dark:bg-yellow-900/20 rounded-lg p-4">
+              <h3 className="text-sm font-medium text-yellow-800 dark:text-yellow-400 mb-2">Note</h3>
+              <p className="text-sm text-yellow-700 dark:text-yellow-300">
+                Stock data is fetched on-demand when you click on a stock. Due to API rate limits, 
+                there may be a short delay between requests. Please be patient while the data loads.
+              </p>
             </div>
           </div>
         </div>
