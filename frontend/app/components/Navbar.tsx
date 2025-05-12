@@ -46,6 +46,9 @@ export default function Navbar() {
               <Link to="/investing" className={navLinkClass("/investing")}>
                 Investing
               </Link>
+              <Link to="/recommendations" className={navLinkClass("/recommendations")}>
+                Recommendations
+              </Link>
               <Link to="/about" className={navLinkClass("/about")}>
                 About
               </Link>

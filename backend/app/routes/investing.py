@@ -327,6 +327,111 @@ async def search_stocks(
             detail=f"Failed to search stocks: {str(e)}"
         )
 
+
+@router.get("/stocks/recommendations", response_model=List[StockDetail])
+async def get_stock_recommendations(
+    db: Session = Depends(get_db),
+    token: dict = Depends(verify_token)
+):
+    """Get top 5 stock recommendations based on various factors"""
+    try:
+        # Get user from token
+        user = db.query(User).filter(User.email == token["sub"]).first()
+        if not user:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="User not found"
+            )
+
+        # List of stocks to analyze (you can expand this list)
+        stocks_to_analyze = [
+            "AAPL", "MSFT", "GOOGL", "AMZN", "META",  # Tech
+            "JPM", "BAC", "WFC", "GS", "MS",          # Finance
+            "JNJ", "PFE", "MRK", "UNH", "ABBV",       # Healthcare
+            "XOM", "CVX", "COP", "SLB", "EOG",        # Energy
+            "WMT", "TGT", "COST", "HD", "LOW"         # Retail
+        ]
+
+        recommendations = []
+        for symbol in stocks_to_analyze:
+            try:
+                # Get stock data
+                stock_data = await get_stock_data(symbol, db)
+                
+                # Calculate recommendation score based on various factors
+                score = 0
+                reasons = []
+
+                # Factor 1: Price momentum (last 7 days)
+                if len(stock_data.historical_data) >= 7:
+                    daily_data = [d for d in stock_data.historical_data if not d['is_intraday']]
+                    if len(daily_data) >= 7:
+                        week_ago_price = daily_data[-7]['price']
+                        current_price = stock_data.current_price
+                        price_change = ((current_price - week_ago_price) / week_ago_price) * 100
+                        
+                        if price_change > 5:
+                            score += 2
+                            reasons.append(f"Strong positive momentum: +{price_change:.1f}% in 7 days")
+                        elif price_change > 2:
+                            score += 1
+                            reasons.append(f"Positive momentum: +{price_change:.1f}% in 7 days")
+                        elif price_change < -5:
+                            score -= 1
+                            reasons.append(f"Negative momentum: {price_change:.1f}% in 7 days")
+
+                # Factor 2: Volume analysis
+                avg_volume = stock_data.volume
+                if avg_volume > 10000000:  # High volume
+                    score += 1
+                    reasons.append("High trading volume")
+                elif avg_volume < 1000000:  # Low volume
+                    score -= 1
+                    reasons.append("Low trading volume")
+
+                # Factor 3: Market cap consideration
+                if stock_data.market_cap > 100000000000:  # Large cap
+                    score += 1
+                    reasons.append("Large market cap")
+                elif stock_data.market_cap < 10000000000:  # Small cap
+                    score -= 1
+                    reasons.append("Small market cap")
+
+                # Factor 4: Price stability
+                if len(stock_data.historical_data) >= 30:
+                    daily_data = [d for d in stock_data.historical_data if not d['is_intraday']]
+                    if len(daily_data) >= 30:
+                        prices = [d['price'] for d in daily_data[-30:]]
+                        volatility = (max(prices) - min(prices)) / min(prices) * 100
+                        
+                        if volatility < 10:
+                            score += 1
+                            reasons.append("Low volatility")
+                        elif volatility > 30:
+                            score -= 1
+                            reasons.append("High volatility")
+
+                # Add recommendation to list if score is positive
+                if score > 0:
+                    stock_data.recommendation = "BUY" if score >= 2 else "CONSIDER"
+                    stock_data.recommendation_reason = " | ".join(reasons)
+                    recommendations.append(stock_data)
+
+            except Exception as e:
+                logger.error(f"Error analyzing {symbol}: {str(e)}")
+                continue
+
+        # Sort recommendations by score and take top 5
+        recommendations.sort(key=lambda x: len(x.recommendation_reason.split(" | ")), reverse=True)
+        return recommendations[:5]
+
+    except Exception as e:
+        logger.error(f"Error getting recommendations: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to get recommendations: {str(e)}"
+        ) 
+
 @router.get("/stocks/{symbol}", response_model=StockDetail)
 async def get_stock(
     symbol: str,
@@ -645,4 +750,4 @@ async def remove_from_watchlist(
     db.delete(watchlist_item)
     db.commit()
     
-    return {"message": "Stock removed from watchlist"} 
+    return {"message": "Stock removed from watchlist"}

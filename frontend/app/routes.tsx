@@ -8,6 +8,7 @@ import Register from "./routes/register";
 import Dashboard from "./routes/dashboard";
 import Investing from "./routes/investing";
 import About from "./routes/about";
+import Recommendations from "./routes/recommendations";
 
 export const router = createBrowserRouter([
   {
@@ -34,6 +35,11 @@ export const router = createBrowserRouter([
       {
         path: "investing",
         element: <Investing />,
+        errorElement: <ErrorPage />,
+      },
+      {
+        path: "recommendations",
+        element: <Recommendations />,
         errorElement: <ErrorPage />,
       },
       {
