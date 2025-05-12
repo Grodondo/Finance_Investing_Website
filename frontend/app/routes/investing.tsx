@@ -36,6 +36,7 @@ interface Stock {
   historicalData: {
     date: string;
     price: number;
+    is_intraday: boolean;
   }[];
   fiftyTwoWeekHigh?: number;
   fiftyTwoWeekLow?: number;
@@ -196,15 +197,29 @@ export default function Investing() {
         changePercent: stockData.change_percent,
         volume: stockData.volume,
         marketCap: stockData.market_cap,
-        historicalData: stockData.historical_data?.map((point: any) => ({
-          date: point.date,
-          price: point.price
-        })) || [],
+        historicalData: stockData.historical_data?.map((point: any) => {
+          // Check if the date string contains a time component to determine if it's intraday
+          const hasTimeComponent = point.date.includes(' ');
+          return {
+            date: point.date,
+            price: point.price,
+            is_intraday: hasTimeComponent  // Set is_intraday based on date format
+          };
+        }) || [],
         fiftyTwoWeekHigh: stockData.fifty_two_week_high,
         fiftyTwoWeekLow: stockData.fifty_two_week_low
       };
 
       console.log('Normalized stock data:', normalizedStockData);
+      // Log a sample of historical data points to verify is_intraday flag
+      if (normalizedStockData.historicalData.length > 0) {
+        console.log('Sample historical data points:', {
+          first: normalizedStockData.historicalData[0],
+          last: normalizedStockData.historicalData[normalizedStockData.historicalData.length - 1],
+          dailyCount: normalizedStockData.historicalData.filter((p: { is_intraday: boolean }) => !p.is_intraday).length,
+          intradayCount: normalizedStockData.historicalData.filter((p: { is_intraday: boolean }) => p.is_intraday).length
+        });
+      }
       setSelectedStock(normalizedStockData);
       setStockError(null);
     } catch (error) {
@@ -407,12 +422,17 @@ export default function Investing() {
 
   // Add function to filter historical data based on time range
   const getFilteredHistoricalData = (data: Stock['historicalData'] | undefined, range: TimeRange) => {
-    console.log('Raw historical data:', data); // Debug log
+    console.log('Raw historical data:', data);
     
     if (!data || !Array.isArray(data)) {
-      console.log('No valid historical data available'); // Debug log
+      console.log('No valid historical data available');
       return [];
     }
+
+    // Sort data by date to ensure chronological order
+    const sortedData = [...data].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+    console.log('Sorted data first point:', sortedData[0]);
+    console.log('Sorted data last point:', sortedData[sortedData.length - 1]);
 
     const now = new Date();
     const ranges = {
@@ -421,25 +441,71 @@ export default function Investing() {
       '30D': 30
     };
     const days = ranges[range];
-    const cutoff = new Date(now.setDate(now.getDate() - days));
     
-    console.log('Filtering data:', { range, days, cutoff }); // Debug log
+    // Calculate cutoff date based on range
+    const cutoff = new Date(now);
+    if (range === '1D') {
+      // For 1D, get data from exactly 24 hours ago
+      cutoff.setHours(now.getHours() - 24);
+    } else {
+      // For 7D and 30D, get data from the start of the day N days ago
+      cutoff.setDate(now.getDate() - days);
+      cutoff.setHours(0, 0, 0, 0);
+    }
     
-    const filtered = data.filter(item => new Date(item.date) >= cutoff);
-    console.log('Filtered data points:', filtered.length); // Debug log
+    console.log('Filtering data:', { 
+      range, 
+      days, 
+      cutoff: cutoff.toISOString(),
+      now: now.toISOString()
+    });
+    
+    // First separate daily and intraday data
+    const dailyData = sortedData.filter(item => item.is_intraday === false);
+    const intradayData = sortedData.filter(item => item.is_intraday === true);
+    
+    console.log('Daily data points:', dailyData.length);
+    console.log('Intraday data points:', intradayData.length);
+    
+    let filtered: typeof data = [];
+    
+    if (range === '1D') {
+      // For 1D view, use only intraday data from the last 24 hours
+      filtered = intradayData.filter(item => {
+        const itemDate = new Date(item.date);
+        return itemDate >= cutoff;
+      });
+      console.log('1D view - Filtered intraday data points:', filtered.length);
+      if (filtered.length > 0) {
+        console.log('First intraday point:', filtered[0]);
+        console.log('Last intraday point:', filtered[filtered.length - 1]);
+      }
+    } else {
+      // For 7D and 30D views, use only daily data
+      filtered = dailyData.filter(item => {
+        const itemDate = new Date(item.date);
+        return itemDate >= cutoff;
+      });
+      
+      console.log(`${range} view - Filtered daily data points:`, filtered.length);
+      if (filtered.length > 0) {
+        console.log('First daily point:', filtered[0]);
+        console.log('Last daily point:', filtered[filtered.length - 1]);
+      }
+    }
     
     return filtered;
   };
 
   // Add function to prepare chart data
   const prepareChartData = (data: Stock['historicalData'] | undefined, range: TimeRange) => {
-    console.log('Preparing chart data for range:', range); // Debug log
+    console.log('Preparing chart data for range:', range);
     
     const filteredData = getFilteredHistoricalData(data, range);
-    console.log('Filtered data for chart:', filteredData); // Debug log
+    console.log('Filtered data for chart:', filteredData);
     
     if (filteredData.length === 0) {
-      console.log('No data points after filtering'); // Debug log
+      console.log('No data points after filtering');
       return {
         labels: [],
         datasets: [{
@@ -458,9 +524,20 @@ export default function Investing() {
     const chartData = {
       labels: filteredData.map(item => {
         const date = new Date(item.date);
-        return range === '1D' 
-          ? date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-          : date.toLocaleDateString([], { month: 'short', day: 'numeric' });
+        if (range === '1D') {
+          // For 1D view, show hour:minute
+          return date.toLocaleTimeString([], { 
+            hour: '2-digit', 
+            minute: '2-digit',
+            hour12: false // Use 24-hour format
+          });
+        } else {
+          // For other ranges, show month and day
+          return date.toLocaleDateString([], { 
+            month: 'short', 
+            day: 'numeric' 
+          });
+        }
       }),
       datasets: [
         {
@@ -470,13 +547,22 @@ export default function Investing() {
           backgroundColor: 'rgba(99, 102, 241, 0.1)',
           fill: true,
           tension: 0.4,
-          pointRadius: 0,
+          pointRadius: range === '1D' ? 2 : 0, // Show points for intraday data
           borderWidth: 2,
         }
       ]
     };
     
-    console.log('Final chart data:', chartData); // Debug log
+    console.log('Final chart data:', {
+      labels: chartData.labels,
+      dataPoints: chartData.datasets[0].data.length,
+      firstPoint: { label: chartData.labels[0], price: chartData.datasets[0].data[0] },
+      lastPoint: { 
+        label: chartData.labels[chartData.labels.length - 1], 
+        price: chartData.datasets[0].data[chartData.datasets[0].data.length - 1] 
+      }
+    });
+    
     return chartData;
   };
 
@@ -492,7 +578,21 @@ export default function Investing() {
         mode: 'index' as const,
         intersect: false,
         callbacks: {
-          label: (context: any) => `$${context.parsed.y.toFixed(2)}`
+          label: (context: any) => `$${context.parsed.y.toFixed(2)}`,
+          title: (context: any) => {
+            const date = new Date(context[0].label);
+            if (timeRange === '1D') {
+              return date.toLocaleTimeString([], { 
+                hour: '2-digit', 
+                minute: '2-digit',
+                hour12: false 
+              });
+            }
+            return date.toLocaleDateString([], { 
+              month: 'short', 
+              day: 'numeric' 
+            });
+          }
         }
       }
     },
@@ -504,13 +604,20 @@ export default function Investing() {
         ticks: {
           maxRotation: 0,
           autoSkip: true,
-          maxTicksLimit: 6
+          maxTicksLimit: timeRange === '1D' ? 12 : 6, // More ticks for intraday view
+          callback: (value: any, index: number, values: any[]) => {
+            if (timeRange === '1D') {
+              // For intraday, show every 2nd tick to avoid crowding
+              return index % 2 === 0 ? value : '';
+            }
+            return value;
+          }
         }
       },
       y: {
         position: 'right' as const,
         grid: {
-          color: 'rgba(156, 163, 175, 0.1)' // gray-400 with opacity
+          color: 'rgba(156, 163, 175, 0.1)'
         },
         ticks: {
           callback: (value: any) => `$${value.toFixed(2)}`

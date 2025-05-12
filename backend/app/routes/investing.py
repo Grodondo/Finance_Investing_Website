@@ -108,51 +108,93 @@ async def get_stock_data(symbol: str, db: Session) -> StockDetail:
                 detail=f"Could not fetch stock info for {symbol}: {str(e)}"
             )
         
-        # Get historical data for the last 30 days
+        # Get historical data
         end_date = datetime.now()
         start_date = end_date - timedelta(days=30)
         logger.info(f"Fetching historical data from {start_date} to {end_date}")
         
         try:
-            hist = ticker.history(start=start_date, end=end_date, interval='1d')
-            logger.info(f"Historical data shape: {hist.shape if not hist.empty else 'Empty'}")
+            # First try to get intraday data for 1-day view with 5-minute intervals
+            intraday_hist = ticker.history(period="1d", interval="5m")
+            logger.info(f"Intraday data shape: {intraday_hist.shape if not intraday_hist.empty else 'Empty'}")
             
-            if hist.empty:
-                logger.warning(f"No historical data available for {symbol} in 30-day range")
+            if intraday_hist.empty:
+                logger.warning("No 5-minute interval data available, trying 1-hour interval")
+                intraday_hist = ticker.history(period="1d", interval="1h")
+                logger.info(f"1-hour interval data shape: {intraday_hist.shape if not intraday_hist.empty else 'Empty'}")
+            
+            # Get daily data for the last 30 days
+            daily_hist = ticker.history(start=start_date, end=end_date, interval='1d')
+            logger.info(f"Daily data shape: {daily_hist.shape if not daily_hist.empty else 'Empty'}")
+            
+            if daily_hist.empty:
+                logger.warning(f"No daily data available for {symbol} in 30-day range")
                 # Try getting a shorter period if 30 days fails
                 logger.info("Attempting to fetch 1-month period instead")
-                hist = ticker.history(period="1mo", interval='1d')
-                logger.info(f"1-month period data shape: {hist.shape if not hist.empty else 'Empty'}")
+                daily_hist = ticker.history(period="1mo", interval='1d')
+                logger.info(f"1-month period data shape: {daily_hist.shape if not daily_hist.empty else 'Empty'}")
                 
-                if hist.empty:
-                    logger.warning(f"Still no historical data available for {symbol}")
+                if daily_hist.empty:
+                    logger.warning(f"Still no daily data available for {symbol}")
                     # Try one last time with a different interval
                     logger.info("Attempting to fetch with 1d interval")
-                    hist = ticker.history(period="1mo", interval='1d', auto_adjust=True)
-                    logger.info(f"Final attempt data shape: {hist.shape if not hist.empty else 'Empty'}")
+                    daily_hist = ticker.history(period="1mo", interval='1d', auto_adjust=True)
+                    logger.info(f"Final attempt data shape: {daily_hist.shape if not daily_hist.empty else 'Empty'}")
         except Exception as e:
             logger.error(f"Error fetching historical data for {symbol}: {str(e)}")
-            hist = pd.DataFrame()  # Empty DataFrame as fallback
+            intraday_hist = pd.DataFrame()
+            daily_hist = pd.DataFrame()
         
         # Convert historical data to list of dicts
         historical_data = []
-        if not hist.empty:
-            for date, row in hist.iterrows():
+        
+        # Process daily data first (for 7D and 30D views)
+        if not daily_hist.empty:
+            logger.info(f"Processing {len(daily_hist)} daily data points")
+            for date, row in daily_hist.iterrows():
                 try:
                     historical_data.append({
                         'date': date.strftime('%Y-%m-%d'),
-                        'price': float(row['Close'])
+                        'price': float(row['Close']),
+                        'is_intraday': False  # Explicitly set to False for daily data
                     })
                 except Exception as e:
-                    logger.error(f"Error processing historical data point for {symbol}: {str(e)}")
+                    logger.error(f"Error processing daily data point for {symbol}: {str(e)}")
                     continue
-            
-            logger.info(f"Successfully processed {len(historical_data)} historical data points")
+            logger.info(f"Successfully processed {len(historical_data)} daily data points")
             if len(historical_data) > 0:
-                logger.debug(f"First data point: {historical_data[0]}")
-                logger.debug(f"Last data point: {historical_data[-1]}")
+                logger.debug(f"First daily point: {historical_data[0]}")
+                logger.debug(f"Last daily point: {historical_data[-1]}")
+        
+        # Process intraday data (for 1D view)
+        if not intraday_hist.empty:
+            logger.info(f"Processing {len(intraday_hist)} intraday data points")
+            for date, row in intraday_hist.iterrows():
+                try:
+                    historical_data.append({
+                        'date': date.strftime('%Y-%m-%d %H:%M:%S'),
+                        'price': float(row['Close']),
+                        'is_intraday': True  # Explicitly set to True for intraday data
+                    })
+                except Exception as e:
+                    logger.error(f"Error processing intraday data point for {symbol}: {str(e)}")
+                    continue
+            logger.info(f"Successfully processed {len(intraday_hist)} intraday data points")
+            if len(intraday_hist) > 0:
+                # Log the first and last intraday points
+                intraday_points = [d for d in historical_data if d['is_intraday']]
+                if intraday_points:
+                    logger.debug(f"First intraday point: {intraday_points[0]}")
+                    logger.debug(f"Last intraday point: {intraday_points[-1]}")
         else:
-            logger.warning(f"No historical data points available for {symbol}")
+            logger.warning(f"No intraday data available for {symbol}")
+        
+        # Sort data by date
+        historical_data.sort(key=lambda x: x['date'])
+        logger.info(f"Total historical data points: {len(historical_data)}")
+        logger.debug(f"Sample of historical data: {historical_data[:2]}")  # Log first two points
+        logger.debug(f"Intraday points count: {sum(1 for d in historical_data if d['is_intraday'])}")
+        logger.debug(f"Daily points count: {sum(1 for d in historical_data if not d['is_intraday'])}")
         
         current_time = datetime.utcnow()
         
