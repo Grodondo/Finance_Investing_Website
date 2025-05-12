@@ -198,28 +198,33 @@ export default function Investing() {
         volume: stockData.volume,
         marketCap: stockData.market_cap,
         historicalData: stockData.historical_data?.map((point: any) => {
-          // Check if the date string contains a time component to determine if it's intraday
           const hasTimeComponent = point.date.includes(' ');
           return {
             date: point.date,
             price: point.price,
-            is_intraday: hasTimeComponent  // Set is_intraday based on date format
+            is_intraday: hasTimeComponent
           };
         }) || [],
         fiftyTwoWeekHigh: stockData.fifty_two_week_high,
         fiftyTwoWeekLow: stockData.fifty_two_week_low
       };
 
-      console.log('Normalized stock data:', normalizedStockData);
-      // Log a sample of historical data points to verify is_intraday flag
-      if (normalizedStockData.historicalData.length > 0) {
-        console.log('Sample historical data points:', {
-          first: normalizedStockData.historicalData[0],
-          last: normalizedStockData.historicalData[normalizedStockData.historicalData.length - 1],
-          dailyCount: normalizedStockData.historicalData.filter((p: { is_intraday: boolean }) => !p.is_intraday).length,
-          intradayCount: normalizedStockData.historicalData.filter((p: { is_intraday: boolean }) => p.is_intraday).length
-        });
-      }
+      // Update the watchlist with the new stock data
+      setWatchlist(prevWatchlist => 
+        prevWatchlist.map(stock => 
+          stock.symbol === symbol
+            ? {
+                ...stock,
+                currentPrice: normalizedStockData.currentPrice,
+                change: normalizedStockData.change,
+                changePercent: normalizedStockData.changePercent,
+                volume: normalizedStockData.volume,
+                marketCap: normalizedStockData.marketCap
+              }
+            : stock
+        )
+      );
+
       setSelectedStock(normalizedStockData);
       setStockError(null);
     } catch (error) {
@@ -231,6 +236,62 @@ export default function Investing() {
       setIsLoadingStock(false);
     }
   };
+
+  // Add a function to refresh watchlist data periodically
+  useEffect(() => {
+    if (!isAuthenticated || !watchlist.length) return;
+
+    const refreshWatchlistData = async () => {
+      try {
+        const authHeader = getAuthHeader();
+        if (!authHeader) return;
+
+        // Fetch fresh data for each stock in the watchlist
+        const updatedWatchlist = await Promise.all(
+          watchlist.map(async (stock) => {
+            try {
+              const response = await fetch(`/api/stocks/${stock.symbol}`, {
+                headers: {
+                  ...authHeader,
+                  "Content-Type": "application/json"
+                }
+              });
+
+              if (!response.ok) {
+                console.error(`Failed to fetch data for ${stock.symbol}`);
+                return stock; // Return existing data if fetch fails
+              }
+
+              const stockData = await response.json();
+              return {
+                ...stock,
+                currentPrice: stockData.current_price,
+                change: stockData.change,
+                changePercent: stockData.change_percent,
+                volume: stockData.volume,
+                marketCap: stockData.market_cap
+              };
+            } catch (error) {
+              console.error(`Error fetching data for ${stock.symbol}:`, error);
+              return stock; // Return existing data if fetch fails
+            }
+          })
+        );
+
+        setWatchlist(updatedWatchlist);
+      } catch (error) {
+        console.error("Error refreshing watchlist:", error);
+      }
+    };
+
+    // Refresh data every 30 seconds
+    const intervalId = setInterval(refreshWatchlistData, 30000);
+
+    // Initial refresh
+    refreshWatchlistData();
+
+    return () => clearInterval(intervalId);
+  }, [isAuthenticated, watchlist.length, getAuthHeader]);
 
   const handleStockSelect = (symbol: string) => {
     fetchStockData(symbol);
@@ -650,6 +711,11 @@ export default function Investing() {
     }
   };
 
+  // Add this helper function after the component's state declarations
+  const isInWatchlist = (symbol: string) => {
+    return watchlist.some(stock => stock.symbol === symbol);
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen bg-gray-50 dark:bg-dark-bg flex items-center justify-center">
@@ -772,15 +838,21 @@ export default function Investing() {
                           <p className="text-sm font-medium text-gray-900 dark:text-dark-text">{result.symbol}</p>
                           <p className="text-xs text-gray-500 dark:text-gray-400">{result.name}</p>
                         </div>
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleAddToWatchlist(result.symbol);
-                          }}
-                          className="px-3 py-1 text-xs font-medium text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300"
-                        >
-                          Add to Watchlist
-                        </button>
+                        {isInWatchlist(result.symbol) ? (
+                          <span className="px-3 py-1 text-xs font-medium text-gray-500 dark:text-gray-400">
+                            In Watchlist
+                          </span>
+                        ) : (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleAddToWatchlist(result.symbol);
+                            }}
+                            className="px-3 py-1 text-xs font-medium text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300"
+                          >
+                            Add to Watchlist
+                          </button>
+                        )}
                       </div>
                     ))}
                   </div>
@@ -815,12 +887,18 @@ export default function Investing() {
                     </div>
                   </div>
                   <div className="flex space-x-2">
-                    <button
-                      onClick={() => handleAddToWatchlist(selectedStock.symbol)}
-                      className="px-4 py-2 text-sm font-medium text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 rounded-md"
-                    >
-                      Add to Watchlist
-                    </button>
+                    {isInWatchlist(selectedStock.symbol) ? (
+                      <span className="px-4 py-2 text-sm font-medium text-gray-500 dark:text-gray-400 bg-gray-100 dark:bg-gray-800 rounded-md">
+                        In Watchlist
+                      </span>
+                    ) : (
+                      <button
+                        onClick={() => handleAddToWatchlist(selectedStock.symbol)}
+                        className="px-4 py-2 text-sm font-medium text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 rounded-md"
+                      >
+                        Add to Watchlist
+                      </button>
+                    )}
                   </div>
                 </div>
 
