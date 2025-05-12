@@ -2,6 +2,7 @@ from pydantic import BaseModel, Field
 from typing import List, Optional
 from datetime import datetime
 from enum import Enum
+from decimal import Decimal
 
 class OrderType(str, Enum):
     BUY = "BUY"
@@ -104,6 +105,14 @@ class WatchlistItem(BaseModel):
     current_price: float
     change: float
     change_percent: float
+
+    class Config:
+        from_attributes = True
+
+class StockSearchResult(BaseModel):
+    """Schema for stock search results"""
+    symbol: str
+    name: str
 
     class Config:
         from_attributes = True 

@@ -4,6 +4,7 @@ from typing import List, Dict, Optional
 from datetime import datetime, timedelta
 import yfinance as yf
 import time
+import pandas as pd
 from ..db.database import get_db
 from ..auth.utils import verify_token
 from ..models.investing import Stock, Holding, Order, Watchlist, OrderType
@@ -15,6 +16,7 @@ from ..schemas.investing import (
     WatchlistCreate,
     Watchlist as WatchlistSchema,
     WatchlistItem,
+    StockSearchResult,
 )
 from ..models.user import User
 
@@ -79,7 +81,7 @@ def handle_rate_limit(symbol: str) -> Optional[StockDetail]:
         detail=f"Rate limit exceeded. Please try again in {remaining} seconds"
     )
 
-async def get_stock_data(symbol: str) -> StockDetail:
+async def get_stock_data(symbol: str, db: Session) -> StockDetail:
     """Fetch stock data from Yahoo Finance with caching and rate limiting"""
     try:
         # Format and validate symbol
@@ -183,7 +185,28 @@ async def get_stock_data(symbol: str) -> StockDetail:
             for index, row in hist.iterrows()
         ]
 
+        # Check if stock exists in database, if not create it
+        db_stock = db.query(Stock).filter(Stock.symbol == symbol).first()
+        if not db_stock:
+            db_stock = Stock(
+                symbol=symbol,
+                name=info.get('longName', symbol),
+                current_price=current_price,
+                last_updated=datetime.utcnow()
+            )
+            db.add(db_stock)
+            db.commit()
+            db.refresh(db_stock)
+        else:
+            # Update existing stock
+            db_stock.name = info.get('longName', symbol)
+            db_stock.current_price = current_price
+            db_stock.last_updated = datetime.utcnow()
+            db.commit()
+            db.refresh(db_stock)
+
         stock_detail = StockDetail(
+            id=db_stock.id,
             symbol=symbol,
             name=info.get('longName', symbol),
             current_price=current_price,
@@ -213,6 +236,63 @@ async def get_stock_data(symbol: str) -> StockDetail:
             detail=f"Failed to fetch stock data: {str(e)}"
         )
 
+@router.get("/stocks/search", response_model=List[StockSearchResult])
+async def search_stocks(
+    q: str,
+    db: Session = Depends(get_db),
+    token: dict = Depends(verify_token)
+):
+    """Search for stocks by symbol or name using database search"""
+    if not q or len(q) < 2:
+        return []
+    
+    try:
+        # Search in database for matching symbols or names
+        search_query = f"%{q}%"
+        stocks = db.query(Stock).filter(
+            (Stock.symbol.ilike(search_query)) | (Stock.name.ilike(search_query))
+        ).limit(10).all()
+        
+        # If we have results in database, return them
+        if stocks:
+            return [StockSearchResult(symbol=stock.symbol, name=stock.name) for stock in stocks]
+        
+        # If no results in database, try to fetch from Yahoo Finance
+        try:
+            # Try to get stock info directly
+            ticker = yf.Ticker(q)
+            info = ticker.info
+            
+            if info and 'symbol' in info:
+                symbol = info['symbol']
+                name = info.get('longName') or info.get('shortName') or symbol
+                
+                # Create new stock in database
+                stock = Stock(
+                    symbol=symbol,
+                    name=name,
+                    current_price=info.get('currentPrice', 0),
+                    last_updated=datetime.utcnow()
+                )
+                db.add(stock)
+                db.commit()
+                db.refresh(stock)
+                
+                return [StockSearchResult(symbol=symbol, name=name)]
+            
+            return []
+            
+        except Exception as e:
+            print(f"Error fetching stock info: {str(e)}")
+            return []
+            
+    except Exception as e:
+        print(f"Error searching stocks: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to search stocks: {str(e)}"
+        )
+
 @router.get("/stocks/{symbol}", response_model=StockDetail)
 async def get_stock(
     symbol: str,
@@ -227,7 +307,7 @@ async def get_stock(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="User not found"
         )
-    return await get_stock_data(symbol)
+    return await get_stock_data(symbol, db)
 
 @router.get("/portfolio", response_model=Portfolio)
 async def get_portfolio(
@@ -251,7 +331,7 @@ async def get_portfolio(
     
     for holding in holdings:
         # Get current stock price
-        stock_data = await get_stock_data(holding.stock.symbol)
+        stock_data = await get_stock_data(holding.stock.symbol, db)
         current_price = stock_data.current_price
         
         # Calculate holding value and gain/loss
@@ -299,7 +379,7 @@ async def create_order(
         )
     
     # Get current stock price
-    stock_data = await get_stock_data(stock.symbol)
+    stock_data = await get_stock_data(stock.symbol, db)
     
     # Calculate total amount
     total_amount = order.quantity * stock_data.current_price
@@ -402,7 +482,7 @@ async def get_watchlist(
     result = []
     for item in watchlist_items:
         try:
-            stock_data = await get_stock_data(item.stock.symbol)
+            stock_data = await get_stock_data(item.stock.symbol, db)
             result.append(WatchlistItem(
                 symbol=stock_data.symbol,
                 name=stock_data.name,
