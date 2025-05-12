@@ -5,6 +5,7 @@ from datetime import datetime, timedelta
 import yfinance as yf
 import time
 import pandas as pd
+import logging
 from ..db.database import get_db
 from ..auth.utils import verify_token
 from ..models.investing import Stock, Holding, Order, Watchlist, OrderType
@@ -19,6 +20,9 @@ from ..schemas.investing import (
     StockSearchResult,
 )
 from ..models.user import User
+
+# Set up logger
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -82,158 +86,146 @@ def handle_rate_limit(symbol: str) -> Optional[StockDetail]:
     )
 
 async def get_stock_data(symbol: str, db: Session) -> StockDetail:
-    """Fetch stock data from Yahoo Finance with caching and rate limiting"""
+    """Get detailed stock data from Yahoo Finance and sync with database."""
     try:
-        # Format and validate symbol
-        symbol = symbol.strip().upper()
-        if not symbol:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Stock symbol cannot be empty"
-            )
-        
-        # Check cache first
-        if symbol in stock_cache:
-            cached_data, cache_time = stock_cache[symbol]
-            if datetime.utcnow() - cache_time < CACHE_DURATION:
-                print(f"Returning cached data for {symbol}")  # Debug log
-                return cached_data
-        
-        # Check rate limit
-        if not check_rate_limit():
-            return handle_rate_limit(symbol)
-        
-        print(f"Fetching stock data for symbol: {symbol}")  # Debug log
-        stock = yf.Ticker(symbol)
-        print(f"Got Ticker object for {symbol}")  # Debug log
-        
-        # Verify the stock exists by trying to get its info
-        try:
-            print(f"Attempting to get stock info for {symbol}")  # Debug log
-            info = stock.info
-            print(f"Stock info keys: {list(info.keys()) if info else 'None'}")  # Debug log
-            if not info:
-                print(f"No info returned for {symbol}")  # Debug log
-                raise HTTPException(
-                    status_code=status.HTTP_404_NOT_FOUND,
-                    detail=f"Stock symbol {symbol} not found"
-                )
-        except Exception as e:
-            print(f"Error getting stock info for {symbol}: {str(e)}")  # Debug log
-            # Check if it's a rate limit error
-            if "429" in str(e) or "Too Many Requests" in str(e):
-                return handle_rate_limit(symbol)
-            # For other errors, try to use cache if available
-            if symbol in stock_cache:
-                print(f"Error fetching new data, returning expired cache for {symbol}")  # Debug log
-                return stock_cache[symbol][0]
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Invalid stock symbol {symbol}: {str(e)}"
-            )
-        
-        # Get historical data
-        try:
-            print(f"Attempting to get historical data for {symbol}")  # Debug log
-            hist = stock.history(period="1y")
-            print(f"Historical data shape: {hist.shape if not hist.empty else 'Empty'}")  # Debug log
-            if hist.empty:
-                print(f"No historical data for {symbol}")  # Debug log
-                # If we have cached data, return it even if expired
-                if symbol in stock_cache:
-                    print(f"No historical data, returning expired cache for {symbol}")  # Debug log
-                    return stock_cache[symbol][0]
-                raise HTTPException(
-                    status_code=status.HTTP_404_NOT_FOUND,
-                    detail=f"No historical data available for {symbol}"
-                )
-        except Exception as e:
-            print(f"Error getting historical data for {symbol}: {str(e)}")  # Debug log
-            # Check if it's a rate limit error
-            if "429" in str(e) or "Too Many Requests" in str(e):
-                return handle_rate_limit(symbol)
-            # For other errors, try to use cache if available
-            if symbol in stock_cache:
-                print(f"Error fetching historical data, returning expired cache for {symbol}")  # Debug log
-                return stock_cache[symbol][0]
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Failed to fetch historical data for {symbol}: {str(e)}"
-            )
-        
-        # Calculate change and change percent
-        current_price = info.get('currentPrice', 0)
-        if current_price == 0:
-            current_price = info.get('regularMarketPrice', 0)
-        if current_price == 0:
-            # If we have cached data, return it even if expired
-            if symbol in stock_cache:
-                print(f"No current price, returning expired cache for {symbol}")  # Debug log
-                return stock_cache[symbol][0]
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Could not get current price for {symbol}"
-            )
-            
-        previous_close = info.get('previousClose', current_price)
-        change = current_price - previous_close
-        change_percent = (change / previous_close) * 100 if previous_close else 0
-
-        # Format historical data
-        historical_data = [
-            {"date": index.to_pydatetime(), "price": row['Close']}
-            for index, row in hist.iterrows()
-        ]
-
-        # Check if stock exists in database, if not create it
+        # Check if we have the stock in database
         db_stock = db.query(Stock).filter(Stock.symbol == symbol).first()
-        if not db_stock:
-            db_stock = Stock(
-                symbol=symbol,
-                name=info.get('longName', symbol),
-                current_price=current_price,
-                last_updated=datetime.utcnow()
+        logger.info(f"Database lookup for {symbol}: {'Found' if db_stock else 'Not found'}")
+        
+        # Get data from Yahoo Finance
+        logger.info(f"Fetching data for symbol: {symbol}")
+        ticker = yf.Ticker(symbol)
+        
+        # Get basic info first
+        try:
+            info = ticker.info
+            logger.info(f"Successfully fetched basic info for {symbol}")
+            logger.debug(f"Available info keys: {list(info.keys())}")
+        except Exception as e:
+            logger.error(f"Error fetching basic info for {symbol}: {str(e)}")
+            raise HTTPException(
+                status_code=404,
+                detail=f"Could not fetch stock info for {symbol}: {str(e)}"
             )
-            db.add(db_stock)
-            db.commit()
-            db.refresh(db_stock)
+        
+        # Get historical data for the last 30 days
+        end_date = datetime.now()
+        start_date = end_date - timedelta(days=30)
+        logger.info(f"Fetching historical data from {start_date} to {end_date}")
+        
+        try:
+            hist = ticker.history(start=start_date, end=end_date, interval='1d')
+            logger.info(f"Historical data shape: {hist.shape if not hist.empty else 'Empty'}")
+            
+            if hist.empty:
+                logger.warning(f"No historical data available for {symbol} in 30-day range")
+                # Try getting a shorter period if 30 days fails
+                logger.info("Attempting to fetch 1-month period instead")
+                hist = ticker.history(period="1mo", interval='1d')
+                logger.info(f"1-month period data shape: {hist.shape if not hist.empty else 'Empty'}")
+                
+                if hist.empty:
+                    logger.warning(f"Still no historical data available for {symbol}")
+                    # Try one last time with a different interval
+                    logger.info("Attempting to fetch with 1d interval")
+                    hist = ticker.history(period="1mo", interval='1d', auto_adjust=True)
+                    logger.info(f"Final attempt data shape: {hist.shape if not hist.empty else 'Empty'}")
+        except Exception as e:
+            logger.error(f"Error fetching historical data for {symbol}: {str(e)}")
+            hist = pd.DataFrame()  # Empty DataFrame as fallback
+        
+        # Convert historical data to list of dicts
+        historical_data = []
+        if not hist.empty:
+            for date, row in hist.iterrows():
+                try:
+                    historical_data.append({
+                        'date': date.strftime('%Y-%m-%d'),
+                        'price': float(row['Close'])
+                    })
+                except Exception as e:
+                    logger.error(f"Error processing historical data point for {symbol}: {str(e)}")
+                    continue
+            
+            logger.info(f"Successfully processed {len(historical_data)} historical data points")
+            if len(historical_data) > 0:
+                logger.debug(f"First data point: {historical_data[0]}")
+                logger.debug(f"Last data point: {historical_data[-1]}")
         else:
-            # Update existing stock
-            db_stock.name = info.get('longName', symbol)
-            db_stock.current_price = current_price
-            db_stock.last_updated = datetime.utcnow()
+            logger.warning(f"No historical data points available for {symbol}")
+        
+        current_time = datetime.utcnow()
+        
+        # Prepare stock data
+        try:
+            stock_data = {
+                'symbol': symbol,
+                'name': info.get('longName', symbol),
+                'current_price': float(info.get('currentPrice', 0)),
+                'change': float(info.get('regularMarketChange', 0)),
+                'change_percent': float(info.get('regularMarketChangePercent', 0)),
+                'volume': int(info.get('regularMarketVolume', 0)),
+                'market_cap': float(info.get('marketCap', 0)),
+                'fifty_two_week_high': float(info.get('fiftyTwoWeekHigh', 0)),
+                'fifty_two_week_low': float(info.get('fiftyTwoWeekLow', 0)),
+                'historical_data': historical_data,
+                'last_updated': current_time
+            }
+            logger.info(f"Stock data prepared successfully for {symbol}")
+            logger.debug(f"Stock data keys: {list(stock_data.keys())}")
+        except Exception as e:
+            logger.error(f"Error preparing stock data for {symbol}: {str(e)}")
+            raise HTTPException(
+                status_code=500,
+                detail=f"Error preparing stock data: {str(e)}"
+            )
+        
+        # Update or create stock in database
+        try:
+            if db_stock:
+                for key, value in stock_data.items():
+                    if key not in ['historical_data', 'last_updated']:
+                        setattr(db_stock, key, value)
+                db_stock.last_updated = current_time
+                logger.info(f"Updated existing stock record for {symbol}")
+            else:
+                db_stock = Stock(**{k: v for k, v in stock_data.items() if k not in ['historical_data', 'last_updated']})
+                db_stock.last_updated = current_time
+                db.add(db_stock)
+                logger.info(f"Created new stock record for {symbol}")
+            
             db.commit()
             db.refresh(db_stock)
-
-        stock_detail = StockDetail(
-            id=db_stock.id,
-            symbol=symbol,
-            name=info.get('longName', symbol),
-            current_price=current_price,
-            last_updated=datetime.utcnow(),
-            historical_data=historical_data,
-            volume=info.get('volume', 0),
-            market_cap=info.get('marketCap', 0),
-            change=change,
-            change_percent=change_percent
-        )
+        except Exception as e:
+            logger.error(f"Database error for {symbol}: {str(e)}")
+            db.rollback()
+            raise HTTPException(
+                status_code=500,
+                detail=f"Database error: {str(e)}"
+            )
         
-        # Cache the result
-        stock_cache[symbol] = (stock_detail, datetime.utcnow())
-        print(f"Cached new data for {symbol}")  # Debug log
+        # Create StockDetail with database ID and historical data
+        try:
+            stock_detail = StockDetail(
+                id=db_stock.id,
+                **stock_data
+            )
+            logger.info(f"Successfully created StockDetail for {symbol} with {len(stock_detail.historical_data)} historical data points")
+            return stock_detail
+        except Exception as e:
+            logger.error(f"Error creating StockDetail for {symbol}: {str(e)}")
+            raise HTTPException(
+                status_code=500,
+                detail=f"Error creating stock detail: {str(e)}"
+            )
         
-        return stock_detail
     except HTTPException:
         raise
     except Exception as e:
-        print(f"Error fetching stock data for {symbol}: {str(e)}")  # Debug log
-        # If we have cached data, return it even if expired
-        if symbol in stock_cache:
-            print(f"Unexpected error, returning expired cache for {symbol}")  # Debug log
-            return stock_cache[symbol][0]
+        logger.error(f"Unexpected error fetching stock data for {symbol}: {str(e)}")
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to fetch stock data: {str(e)}"
+            status_code=500,
+            detail=f"Unexpected error: {str(e)}"
         )
 
 @router.get("/stocks/search", response_model=List[StockSearchResult])
@@ -468,7 +460,7 @@ async def get_watchlist(
     db: Session = Depends(get_db),
     token: dict = Depends(verify_token)
 ):
-    """Get user's watchlist"""
+    """Get user's watchlist with detailed stock information"""
     # Get user from token
     user = db.query(User).filter(User.email == token["sub"]).first()
     if not user:
@@ -477,23 +469,63 @@ async def get_watchlist(
             detail="User not found"
         )
     
-    watchlist_items = db.query(Watchlist).filter(Watchlist.user_id == user.id).all()
-    
-    result = []
-    for item in watchlist_items:
-        try:
-            stock_data = await get_stock_data(item.stock.symbol, db)
-            result.append(WatchlistItem(
-                symbol=stock_data.symbol,
-                name=stock_data.name,
-                current_price=stock_data.current_price,
-                change=stock_data.change,
-                change_percent=stock_data.change_percent
-            ))
-        except Exception:
-            continue
-    
-    return result
+    try:
+        # Get watchlist items with stock information
+        watchlist_items = (
+            db.query(Watchlist)
+            .join(Stock, Watchlist.stock_id == Stock.id)
+            .filter(Watchlist.user_id == user.id)
+            .all()
+        )
+        
+        result = []
+        for item in watchlist_items:
+            try:
+                # Get fresh stock data
+                stock_data = await get_stock_data(item.stock.symbol, db)
+                
+                # Get user's holdings for this stock if any
+                holding = db.query(Holding).filter(
+                    Holding.user_id == user.id,
+                    Holding.stock_id == item.stock.id
+                ).first()
+                
+                result.append(WatchlistItem(
+                    id=item.stock.id,  # Add stock ID for reference
+                    symbol=stock_data.symbol,
+                    name=stock_data.name,
+                    current_price=stock_data.current_price,
+                    change=stock_data.change,
+                    change_percent=stock_data.change_percent,
+                    volume=stock_data.volume,
+                    market_cap=stock_data.market_cap,
+                    shares_owned=holding.shares if holding else 0,  # Add shares owned
+                    total_value=holding.shares * stock_data.current_price if holding else 0  # Add total value
+                ))
+            except Exception as e:
+                print(f"Error fetching stock data for {item.stock.symbol}: {str(e)}")
+                # Include basic stock info even if we can't get fresh data
+                result.append(WatchlistItem(
+                    id=item.stock.id,
+                    symbol=item.stock.symbol,
+                    name=item.stock.name,
+                    current_price=item.stock.current_price,
+                    change=0,
+                    change_percent=0,
+                    volume=0,
+                    market_cap=0,
+                    shares_owned=0,
+                    total_value=0
+                ))
+                continue
+        
+        return result
+    except Exception as e:
+        print(f"Error fetching watchlist: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to fetch watchlist: {str(e)}"
+        )
 
 @router.post("/watchlist", response_model=WatchlistSchema)
 async def add_to_watchlist(

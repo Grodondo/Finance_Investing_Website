@@ -3,8 +3,18 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordBearer
 from dotenv import load_dotenv
 import os
+import logging
 from app.db.init_db import init_db
 from app.db.database import engine, Base
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.StreamHandler()  # This will print to console
+    ]
+)
 
 # Load environment variables
 load_dotenv()
@@ -33,7 +43,9 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 # Initialize database and create default users
 @app.on_event("startup")
 async def startup_event():
+    logging.info("Starting up application...")
     init_db()
+    logging.info("Database initialized")
 
 # Import and include routers
 from app.routes.auth import router as auth_router

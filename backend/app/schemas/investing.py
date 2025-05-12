@@ -27,12 +27,32 @@ class StockHistoricalData(BaseModel):
     date: datetime
     price: float
 
-class StockDetail(Stock):
-    historical_data: List[StockHistoricalData]
-    volume: int
-    market_cap: float
+class HistoricalDataPoint(BaseModel):
+    date: str
+    price: float
+
+    class Config:
+        from_attributes = True
+
+class StockDetail(BaseModel):
+    id: int
+    symbol: str
+    name: str
+    current_price: float
     change: float
     change_percent: float
+    volume: int
+    market_cap: float
+    fifty_two_week_high: Optional[float] = None
+    fifty_two_week_low: Optional[float] = None
+    historical_data: List[HistoricalDataPoint] = Field(default_factory=list)
+    last_updated: datetime
+
+    class Config:
+        from_attributes = True
+        json_encoders = {
+            datetime: lambda v: v.isoformat()
+        }
 
 class HoldingBase(BaseModel):
     stock_id: int
@@ -100,11 +120,16 @@ class Portfolio(BaseModel):
         from_attributes = True
 
 class WatchlistItem(BaseModel):
+    id: int  # Stock ID
     symbol: str
     name: str
     current_price: float
     change: float
     change_percent: float
+    volume: int
+    market_cap: float
+    shares_owned: float = 0  # Number of shares owned by the user
+    total_value: float = 0  # Total value of owned shares
 
     class Config:
         from_attributes = True

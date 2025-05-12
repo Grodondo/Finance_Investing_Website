@@ -11,6 +11,7 @@ import {
   Title,
   Tooltip,
   Legend,
+  Filler
 } from "chart.js";
 
 ChartJS.register(
@@ -20,7 +21,8 @@ ChartJS.register(
   LineElement,
   Title,
   Tooltip,
-  Legend
+  Legend,
+  Filler
 );
 
 interface Stock {
@@ -35,6 +37,8 @@ interface Stock {
     date: string;
     price: number;
   }[];
+  fiftyTwoWeekHigh?: number;
+  fiftyTwoWeekLow?: number;
 }
 
 interface Portfolio {
@@ -53,17 +57,25 @@ interface Portfolio {
 }
 
 interface Watchlist {
+  id: number;
   symbol: string;
   name: string;
   currentPrice: number;
   change: number;
   changePercent: number;
+  volume: number;
+  marketCap: number;
+  sharesOwned: number;
+  totalValue: number;
 }
 
 interface SearchResult {
   symbol: string;
   name: string;
 }
+
+// Add time range type
+type TimeRange = '1D' | '7D' | '30D';
 
 export default function Investing() {
   const { user, logout, getAuthHeader, isAuthenticated } = useAuth();
@@ -75,7 +87,7 @@ export default function Investing() {
   const [error, setError] = useState<string | null>(null);
   const [stockError, setStockError] = useState<string | null>(null);
   const [isLoadingStock, setIsLoadingStock] = useState(false);
-  const [timeRange, setTimeRange] = useState<'1D' | '1W' | '1M' | '3M' | '1Y' | 'ALL'>('1M');
+  const [timeRange, setTimeRange] = useState<TimeRange>('30D');
   const [orderType, setOrderType] = useState<'BUY' | 'SELL'>('BUY');
   const [orderQuantity, setOrderQuantity] = useState<number>(0);
   const [searchQuery, setSearchQuery] = useState("");
@@ -173,7 +185,27 @@ export default function Investing() {
       }
 
       const stockData = await response.json();
-      setSelectedStock(stockData);
+      console.log('Raw API response:', stockData);
+
+      // Map snake_case to camelCase
+      const normalizedStockData = {
+        symbol: stockData.symbol,
+        name: stockData.name,
+        currentPrice: stockData.current_price,
+        change: stockData.change,
+        changePercent: stockData.change_percent,
+        volume: stockData.volume,
+        marketCap: stockData.market_cap,
+        historicalData: stockData.historical_data?.map((point: any) => ({
+          date: point.date,
+          price: point.price
+        })) || [],
+        fiftyTwoWeekHigh: stockData.fifty_two_week_high,
+        fiftyTwoWeekLow: stockData.fifty_two_week_low
+      };
+
+      console.log('Normalized stock data:', normalizedStockData);
+      setSelectedStock(normalizedStockData);
       setStockError(null);
     } catch (error) {
       console.error("Error fetching stock data:", error);
@@ -373,6 +405,125 @@ export default function Investing() {
     }
   };
 
+  // Add function to filter historical data based on time range
+  const getFilteredHistoricalData = (data: Stock['historicalData'] | undefined, range: TimeRange) => {
+    console.log('Raw historical data:', data); // Debug log
+    
+    if (!data || !Array.isArray(data)) {
+      console.log('No valid historical data available'); // Debug log
+      return [];
+    }
+
+    const now = new Date();
+    const ranges = {
+      '1D': 1,
+      '7D': 7,
+      '30D': 30
+    };
+    const days = ranges[range];
+    const cutoff = new Date(now.setDate(now.getDate() - days));
+    
+    console.log('Filtering data:', { range, days, cutoff }); // Debug log
+    
+    const filtered = data.filter(item => new Date(item.date) >= cutoff);
+    console.log('Filtered data points:', filtered.length); // Debug log
+    
+    return filtered;
+  };
+
+  // Add function to prepare chart data
+  const prepareChartData = (data: Stock['historicalData'] | undefined, range: TimeRange) => {
+    console.log('Preparing chart data for range:', range); // Debug log
+    
+    const filteredData = getFilteredHistoricalData(data, range);
+    console.log('Filtered data for chart:', filteredData); // Debug log
+    
+    if (filteredData.length === 0) {
+      console.log('No data points after filtering'); // Debug log
+      return {
+        labels: [],
+        datasets: [{
+          label: 'Price',
+          data: [],
+          borderColor: 'rgb(99, 102, 241)',
+          backgroundColor: 'rgba(99, 102, 241, 0.1)',
+          fill: true,
+          tension: 0.4,
+          pointRadius: 0,
+          borderWidth: 2,
+        }]
+      };
+    }
+    
+    const chartData = {
+      labels: filteredData.map(item => {
+        const date = new Date(item.date);
+        return range === '1D' 
+          ? date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+          : date.toLocaleDateString([], { month: 'short', day: 'numeric' });
+      }),
+      datasets: [
+        {
+          label: 'Price',
+          data: filteredData.map(item => item.price),
+          borderColor: 'rgb(99, 102, 241)',
+          backgroundColor: 'rgba(99, 102, 241, 0.1)',
+          fill: true,
+          tension: 0.4,
+          pointRadius: 0,
+          borderWidth: 2,
+        }
+      ]
+    };
+    
+    console.log('Final chart data:', chartData); // Debug log
+    return chartData;
+  };
+
+  // Add chart options
+  const chartOptions = {
+    responsive: true,
+    maintainAspectRatio: false,
+    plugins: {
+      legend: {
+        display: false
+      },
+      tooltip: {
+        mode: 'index' as const,
+        intersect: false,
+        callbacks: {
+          label: (context: any) => `$${context.parsed.y.toFixed(2)}`
+        }
+      }
+    },
+    scales: {
+      x: {
+        grid: {
+          display: false
+        },
+        ticks: {
+          maxRotation: 0,
+          autoSkip: true,
+          maxTicksLimit: 6
+        }
+      },
+      y: {
+        position: 'right' as const,
+        grid: {
+          color: 'rgba(156, 163, 175, 0.1)' // gray-400 with opacity
+        },
+        ticks: {
+          callback: (value: any) => `$${value.toFixed(2)}`
+        }
+      }
+    },
+    interaction: {
+      mode: 'nearest' as const,
+      axis: 'x' as const,
+      intersect: false
+    }
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen bg-gray-50 dark:bg-dark-bg flex items-center justify-center">
@@ -514,7 +665,7 @@ export default function Investing() {
             {/* Stock Details */}
             {selectedStock && (
               <div className="bg-white dark:bg-dark-surface rounded-lg shadow-sm p-6">
-                <div className="flex justify-between items-center mb-6">
+                <div className="flex justify-between items-start mb-6">
                   <div>
                     <h2 className="text-lg font-medium text-gray-900 dark:text-dark-text">{selectedStock.name} ({selectedStock.symbol})</h2>
                     <div className="flex items-baseline space-x-4 mt-1">
@@ -529,14 +680,64 @@ export default function Investing() {
                         {(selectedStock.change ?? 0) >= 0 ? '+' : ''}{(selectedStock.change ?? 0).toFixed(2)} ({(selectedStock.changePercent ?? 0).toFixed(2)}%)
                       </span>
                     </div>
+                    <div className="mt-2 grid grid-cols-2 gap-4 text-sm text-gray-500 dark:text-gray-400">
+                      <div>
+                        <p>Volume: {selectedStock.volume?.toLocaleString() ?? '0'}</p>
+                        <p>Market Cap: ${(selectedStock.marketCap / 1e9).toFixed(2)}B</p>
+                      </div>
+                      <div>
+                        <p>52W High: ${selectedStock.fiftyTwoWeekHigh?.toFixed(2) ?? 'N/A'}</p>
+                        <p>52W Low: ${selectedStock.fiftyTwoWeekLow?.toFixed(2) ?? 'N/A'}</p>
+                      </div>
+                    </div>
                   </div>
-                  <button
-                    onClick={() => handleRemoveFromWatchlist(selectedStock.symbol)}
-                    className="text-sm text-red-600 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300"
-                  >
-                    Remove from Watchlist
-                  </button>
+                  <div className="flex space-x-2">
+                    <button
+                      onClick={() => handleAddToWatchlist(selectedStock.symbol)}
+                      className="px-3 py-1 text-sm text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300"
+                    >
+                      Add to Watchlist
+                    </button>
+                  </div>
                 </div>
+
+                {/* Chart Component */}
+                <div className="mb-6">
+                  <div className="flex justify-between items-center mb-4">
+                    <h3 className="text-sm font-medium text-gray-900 dark:text-dark-text">Price History</h3>
+                    <div className="flex space-x-2">
+                      {(['1D', '7D', '30D'] as TimeRange[]).map((range) => (
+                        <button
+                          key={range}
+                          onClick={() => {
+                            console.log('Changing time range to:', range);
+                            setTimeRange(range);
+                          }}
+                          className={`px-3 py-1 text-xs font-medium rounded-md ${
+                            timeRange === range
+                              ? 'bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300'
+                              : 'bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700'
+                          }`}
+                        >
+                          {range}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="h-64">
+                    {selectedStock?.historicalData && selectedStock.historicalData.length > 0 ? (
+                      <Line
+                        data={prepareChartData(selectedStock.historicalData, timeRange)}
+                        options={chartOptions}
+                      />
+                    ) : (
+                      <div className="h-full flex items-center justify-center text-gray-500 dark:text-gray-400">
+                        {selectedStock?.historicalData ? 'No historical data available' : 'Loading historical data...'}
+                      </div>
+                    )}
+                  </div>
+                </div>
+
                 {stockError && (
                   <div className="mb-4 p-4 bg-yellow-50 dark:bg-yellow-900/20 rounded-lg">
                     <p className="text-sm text-yellow-700 dark:text-yellow-300">{stockError}</p>
@@ -583,18 +784,31 @@ export default function Investing() {
                     <label htmlFor="quantity" className="block text-sm font-medium text-gray-700 dark:text-gray-300">
                       Quantity
                     </label>
-                    <input
-                      type="number"
-                      id="quantity"
-                      min="1"
-                      value={orderQuantity}
-                      onChange={(e) => setOrderQuantity(Number(e.target.value))}
-                      className="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 dark:bg-dark-surface dark:text-dark-text sm:text-sm"
-                    />
+                    <div className="mt-1 relative rounded-md shadow-sm">
+                      <input
+                        type="number"
+                        id="quantity"
+                        min="0.01"
+                        step="0.01"
+                        value={orderQuantity}
+                        onChange={(e) => setOrderQuantity(Number(e.target.value))}
+                        className="block w-full rounded-md border-gray-300 dark:border-gray-600 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 dark:bg-dark-surface dark:text-dark-text sm:text-sm"
+                        placeholder="0.00"
+                      />
+                      <div className="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none">
+                        <span className="text-gray-500 dark:text-gray-400 sm:text-sm">shares</span>
+                      </div>
+                    </div>
                   </div>
-                  <div className="flex justify-between text-sm text-gray-600 dark:text-gray-400">
-                    <span>Estimated Cost</span>
-                    <span>${(orderQuantity * (selectedStock?.currentPrice || 0)).toFixed(2)}</span>
+                  <div className="space-y-2 text-sm text-gray-600 dark:text-gray-400">
+                    <div className="flex justify-between">
+                      <span>Price per share</span>
+                      <span>${selectedStock?.currentPrice?.toFixed(2) ?? '0.00'}</span>
+                    </div>
+                    <div className="flex justify-between font-medium">
+                      <span>Estimated Total</span>
+                      <span>${(orderQuantity * (selectedStock?.currentPrice || 0)).toFixed(2)}</span>
+                    </div>
                   </div>
                   {orderError && (
                     <div className="p-3 bg-red-50 dark:bg-red-900/20 rounded-md">
@@ -637,26 +851,48 @@ export default function Investing() {
                 <div className="space-y-4">
                   {watchlist.map((stock) => (
                     <div
-                      key={stock.symbol}
+                      key={stock.id}
                       className="flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-800 rounded-lg cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700"
                       onClick={() => handleStockSelect(stock.symbol)}
                     >
-                      <div>
-                        <p className="text-sm font-medium text-gray-900 dark:text-dark-text">{stock.symbol}</p>
-                        <p className="text-xs text-gray-500 dark:text-gray-400">{stock.name}</p>
+                      <div className="flex-1">
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <p className="text-sm font-medium text-gray-900 dark:text-dark-text">{stock.symbol}</p>
+                            <p className="text-xs text-gray-500 dark:text-gray-400">{stock.name}</p>
+                          </div>
+                          <div className="text-right">
+                            <p className="text-sm font-medium text-gray-900 dark:text-dark-text">
+                              ${stock.currentPrice?.toFixed(2) ?? '0.00'}
+                            </p>
+                            <p className={`text-xs ${
+                              (stock.change ?? 0) >= 0
+                                ? 'text-green-600 dark:text-green-400'
+                                : 'text-red-600 dark:text-red-400'
+                            }`}>
+                              {(stock.change ?? 0) >= 0 ? '+' : ''}{(stock.change ?? 0).toFixed(2)} ({(stock.changePercent ?? 0).toFixed(2)}%)
+                            </p>
+                          </div>
+                        </div>
+                        {stock.sharesOwned > 0 && (
+                          <div className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+                            <p>Owned: {stock.sharesOwned.toFixed(2)} shares (${stock.totalValue.toFixed(2)})</p>
+                          </div>
+                        )}
+                        <div className="mt-1 grid grid-cols-2 gap-2 text-xs text-gray-500 dark:text-gray-400">
+                          <p>Volume: {stock.volume?.toLocaleString() ?? '0'}</p>
+                          <p>Market Cap: ${(stock.marketCap / 1e9).toFixed(2)}B</p>
+                        </div>
                       </div>
-                      <div className="text-right">
-                        <p className="text-sm font-medium text-gray-900 dark:text-dark-text">
-                          ${stock.currentPrice?.toFixed(2) ?? '0.00'}
-                        </p>
-                        <p className={`text-xs ${
-                          (stock.change ?? 0) >= 0
-                            ? 'text-green-600 dark:text-green-400'
-                            : 'text-red-600 dark:text-red-400'
-                        }`}>
-                          {(stock.change ?? 0) >= 0 ? '+' : ''}{(stock.change ?? 0).toFixed(2)} ({(stock.changePercent ?? 0).toFixed(2)}%)
-                        </p>
-                      </div>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleRemoveFromWatchlist(stock.symbol);
+                        }}
+                        className="ml-4 text-sm text-red-600 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300"
+                      >
+                        Remove
+                      </button>
                     </div>
                   ))}
                 </div>
