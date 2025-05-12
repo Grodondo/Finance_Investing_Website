@@ -25,6 +25,35 @@ ChartJS.register(
   Filler
 );
 
+interface StockResponse {
+  symbol: string;
+  name: string;
+  current_price: number;
+  change: number;
+  change_percent: number;
+  volume: number;
+  market_cap: number;
+  historical_data?: {
+    date: string;
+    price: number;
+  }[];
+  recommendation?: string;
+  recommendation_reason?: string;
+}
+
+interface WatchlistResponse {
+  id: number;
+  symbol: string;
+  name: string;
+  current_price: number;
+  change: number;
+  change_percent: number;
+  volume: number;
+  market_cap: number;
+  shares_owned: number;
+  total_value: number;
+}
+
 interface Stock {
   symbol: string;
   name: string;
@@ -53,6 +82,11 @@ interface Watchlist {
   marketCap: number;
   sharesOwned: number;
   totalValue: number;
+  historicalData: {
+    date: string;
+    price: number;
+    is_intraday: boolean;
+  }[];
 }
 
 type TimeRange = '1D' | '7D' | '30D' | '1Y';
@@ -62,91 +96,67 @@ export default function Recommendations() {
   const navigate = useNavigate();
   const [recommendations, setRecommendations] = useState<Stock[]>([]);
   const [watchlist, setWatchlist] = useState<Watchlist[]>([]);
+  const [selectedStocks, setSelectedStocks] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [recommendationsError, setRecommendationsError] = useState<string | null>(null);
+  const [watchlistError, setWatchlistError] = useState<string | null>(null);
   const [selectedStock, setSelectedStock] = useState<Stock | null>(null);
-  const [timeRange, setTimeRange] = useState<TimeRange>('7D');
+  const [timeRange] = useState<TimeRange>('30D');
   const [isLoadingStock, setIsLoadingStock] = useState(false);
   const [stockError, setStockError] = useState<string | null>(null);
+  const [isPageLoaded, setIsPageLoaded] = useState(false);
 
+  const colors = ['#FF6384', '#36A2EB', '#FFCE56', '#4BC0C0', '#9966FF', '#FF9F40', '#C9CBCF', '#E57373', '#81C784', '#64B5F6'];
+
+  const fetchWithTimeout = async (url: string, options: RequestInit, timeout = 5000): Promise<Response | null> => {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeout);
+
+    try {
+      const response = await fetch(url, {
+        ...options,
+        signal: controller.signal
+      });
+      clearTimeout(timeoutId);
+      return response;
+    } catch (error) {
+      clearTimeout(timeoutId);
+      if (error instanceof Error && error.name === 'AbortError') {
+        return null;
+      }
+      throw error;
+    }
+  };
+
+  // First useEffect: Load watchlist and set up initial page state
   useEffect(() => {
     if (!isAuthenticated) {
-      console.log('Not authenticated, redirecting to login');
       navigate("/login");
       return;
     }
 
-    const fetchData = async () => {
+    const fetchWatchlist = async () => {
       try {
         const authHeader = getAuthHeader();
-        console.log('Auth header:', authHeader); // Debug log
+        if (!authHeader) return;
+
+        const watchlistResponse = await fetchWithTimeout(
+          "/api/watchlist",
+          {
+            headers: { ...authHeader, "Content-Type": "application/json" }
+          }
+        );
+
+        if (!watchlistResponse || !watchlistResponse.ok) {
+          setWatchlist([]);
+          setLoading(false);
+          setIsPageLoaded(true);
+          return;
+        }
+
+        const watchlistData = await watchlistResponse.json() as WatchlistResponse[];
         
-        if (!authHeader) {
-          console.error('No auth header available');
-          throw new Error("Not authenticated");
-        }
-
-        // Fetch recommendations
-        console.log('Fetching recommendations...');
-        const recommendationsResponse = await fetch("/api/stocks/recommendations", {
-          headers: {
-            ...authHeader,
-            "Content-Type": "application/json"
-          }
-        });
-
-        console.log('Recommendations response status:', recommendationsResponse.status);
-        if (!recommendationsResponse.ok) {
-          const errorData = await recommendationsResponse.json().catch(() => ({}));
-          console.error('Recommendations error details:', errorData);
-          throw new Error(errorData.detail || "Failed to fetch recommendations");
-        }
-
-        const recommendationsData = await recommendationsResponse.json();
-        console.log('Recommendations data received:', recommendationsData);
-        if (!Array.isArray(recommendationsData)) {
-          console.error('Invalid recommendations data format:', recommendationsData);
-          throw new Error("Invalid recommendations data format");
-        }
-        // Normalize the data to match our interface
-        const normalizedRecommendations = recommendationsData.map(stock => ({
-          symbol: stock.symbol,
-          name: stock.name,
-          currentPrice: stock.current_price || 0,
-          change: stock.change || 0,
-          changePercent: stock.change_percent || 0,
-          volume: stock.volume || 0,
-          marketCap: stock.market_cap || 0,
-          historicalData: stock.historical_data?.map((point: any) => ({
-            date: point.date,
-            price: point.price,
-            is_intraday: point.date.includes(' ')
-          })) || [],
-          recommendation: stock.recommendation || 'N/A',
-          recommendationReason: stock.recommendation_reason || 'No reason provided'
-        }));
-        setRecommendations(normalizedRecommendations);
-
-        // Fetch watchlist
-        console.log('Fetching watchlist...');
-        const watchlistResponse = await fetch("/api/watchlist", {
-          headers: {
-            ...authHeader,
-            "Content-Type": "application/json"
-          }
-        });
-
-        console.log('Watchlist response status:', watchlistResponse.status);
-        if (!watchlistResponse.ok) {
-          const errorData = await watchlistResponse.json().catch(() => ({}));
-          console.error('Watchlist error details:', errorData);
-          throw new Error(errorData.detail || "Failed to fetch watchlist");
-        }
-
-        const watchlistData = await watchlistResponse.json();
-        console.log('Watchlist data received:', watchlistData);
-        // Normalize watchlist data
-        const normalizedWatchlist = watchlistData.map((stock: any) => ({
+        const normalizedWatchlist = watchlistData.map((stock: WatchlistResponse) => ({
           id: stock.id,
           symbol: stock.symbol,
           name: stock.name,
@@ -156,41 +166,111 @@ export default function Recommendations() {
           volume: stock.volume || 0,
           marketCap: stock.market_cap || 0,
           sharesOwned: stock.shares_owned || 0,
-          totalValue: stock.total_value || 0
+          totalValue: stock.total_value || 0,
+          historicalData: []
         }));
-        setWatchlist(normalizedWatchlist);
-      } catch (error) {
-        console.error("Error fetching data:", error);
-        setError(error instanceof Error ? error.message : "An error occurred");
+
+        const watchlistWithHistory = await Promise.all(
+          normalizedWatchlist.map(async (stock: Watchlist) => {
+            try {
+              const response = await fetchWithTimeout(
+                `/api/stocks/${stock.symbol}`,
+                {
+                  headers: { ...authHeader, "Content-Type": "application/json" }
+                }
+              );
+              if (response?.ok) {
+                const stockData = await response.json() as StockResponse;
+                return {
+                  ...stock,
+                  historicalData: stockData.historical_data?.map(point => ({
+                    date: point.date,
+                    price: point.price,
+                    is_intraday: point.date.includes(' ')
+                  })) || []
+                };
+              }
+              return stock;
+            } catch {
+              return stock;
+            }
+          })
+        );
+        setWatchlist(watchlistWithHistory);
+        setSelectedStocks(watchlistWithHistory.map(stock => stock.symbol));
+      } catch {
+        setWatchlist([]);
       } finally {
-        console.log('Setting loading to false');
         setLoading(false);
+        setIsPageLoaded(true);
       }
     };
 
-    console.log('Starting data fetch...');
-    fetchData();
+    fetchWatchlist();
   }, [getAuthHeader, isAuthenticated, navigate]);
+
+  // Second useEffect: Load recommendations after page is loaded
+  useEffect(() => {
+    if (!isPageLoaded || !isAuthenticated) return;
+
+    const fetchRecommendations = async () => {
+      try {
+        const authHeader = getAuthHeader();
+        if (!authHeader) return;
+
+        const recommendationsResponse = await fetchWithTimeout(
+          "/api/stocks/recommendations",
+          {
+            headers: { ...authHeader, "Content-Type": "application/json" }
+          }
+        );
+
+        if (!recommendationsResponse || !recommendationsResponse.ok) {
+          setRecommendations([]);
+          return;
+        }
+
+        const recommendationsData = await recommendationsResponse.json() as StockResponse[];
+        
+        const normalizedRecommendations = recommendationsData.map((stock: StockResponse) => ({
+          symbol: stock.symbol,
+          name: stock.name,
+          currentPrice: stock.current_price || 0,
+          change: stock.change || 0,
+          changePercent: stock.change_percent || 0,
+          volume: stock.volume || 0,
+          marketCap: stock.market_cap || 0,
+          historicalData: stock.historical_data?.map(point => ({
+            date: point.date,
+            price: point.price,
+            is_intraday: point.date.includes(' ')
+          })) || [],
+          recommendation: stock.recommendation || 'N/A',
+          recommendationReason: stock.recommendation_reason || 'No reason provided'
+        }));
+        setRecommendations(normalizedRecommendations);
+      } catch {
+        setRecommendations([]);
+      }
+    };
+
+    fetchRecommendations();
+  }, [isPageLoaded, getAuthHeader, isAuthenticated]);
+
+  const handleStockSelect = (symbol: string) => {
+    fetchStockData(symbol);
+  };
 
   const fetchStockData = async (symbol: string) => {
     try {
       setIsLoadingStock(true);
       setStockError(null);
-
       const authHeader = getAuthHeader();
       if (!authHeader) return;
-
       const response = await fetch(`/api/stocks/${symbol}`, {
-        headers: {
-          ...authHeader,
-          "Content-Type": "application/json"
-        }
+        headers: { ...authHeader, "Content-Type": "application/json" }
       });
-
-      if (!response.ok) {
-        throw new Error("Failed to fetch stock data");
-      }
-
+      if (!response.ok) throw new Error("Failed to fetch stock data");
       const stockData = await response.json();
       const normalizedStockData = {
         ...stockData,
@@ -205,269 +285,242 @@ export default function Recommendations() {
           is_intraday: point.date.includes(' ')
         })) || []
       };
-
       setSelectedStock(normalizedStockData);
-      setStockError(null);
     } catch (error) {
-      console.error("Error fetching stock data:", error);
-      setStockError("Failed to fetch stock data. Please try again later.");
+      setStockError("Failed to fetch stock data.");
     } finally {
       setIsLoadingStock(false);
     }
   };
 
-  const handleStockSelect = (symbol: string) => {
-    fetchStockData(symbol);
+  const handleAddToWatchlist = async (symbol: string) => {
+    try {
+      const authHeader = getAuthHeader();
+      if (!authHeader) return;
+
+      const response = await fetchWithTimeout(
+        "/api/watchlist",
+        {
+          method: "POST",
+          headers: { ...authHeader, "Content-Type": "application/json" },
+          body: JSON.stringify({ symbol })
+        }
+      );
+
+      if (!response || !response.ok) return;
+
+      // Refetch watchlist with timeout
+      const watchlistResponse = await fetchWithTimeout(
+        "/api/watchlist",
+        {
+          headers: { ...authHeader, "Content-Type": "application/json" }
+        }
+      );
+
+      if (!watchlistResponse || !watchlistResponse.ok) return;
+
+      const watchlistData = await watchlistResponse.json() as WatchlistResponse[];
+      
+      const normalizedWatchlist = watchlistData.map((stock: WatchlistResponse) => ({
+        id: stock.id,
+        symbol: stock.symbol,
+        name: stock.name,
+        currentPrice: stock.current_price || 0,
+        change: stock.change || 0,
+        changePercent: stock.change_percent || 0,
+        volume: stock.volume || 0,
+        marketCap: stock.market_cap || 0,
+        sharesOwned: stock.shares_owned || 0,
+        totalValue: stock.total_value || 0,
+        historicalData: []
+      }));
+
+      // Fetch historical data with timeout
+      const watchlistWithHistory = await Promise.all(
+        normalizedWatchlist.map(async (stock: Watchlist) => {
+          try {
+            const response = await fetchWithTimeout(
+              `/api/stocks/${stock.symbol}`,
+              {
+                headers: { ...authHeader, "Content-Type": "application/json" }
+              }
+            );
+            if (response?.ok) {
+              const stockData = await response.json() as StockResponse;
+              return {
+                ...stock,
+                historicalData: stockData.historical_data?.map(point => ({
+                  date: point.date,
+                  price: point.price,
+                  is_intraday: point.date.includes(' ')
+                })) || []
+              };
+            }
+            return stock;
+          } catch {
+            return stock;
+          }
+        })
+      );
+      setWatchlist(watchlistWithHistory);
+      setSelectedStocks(watchlistWithHistory.map(stock => stock.symbol));
+    } catch {
+      // Silently handle any errors
+    }
   };
 
-  const prepareChartData = (data: Stock['historicalData'] | undefined, range: TimeRange) => {
-    if (!data || data.length === 0) {
-      return {
-        labels: [],
-        datasets: [{
-          label: 'Price',
-          data: [],
-          borderColor: 'rgb(99, 102, 241)',
-          backgroundColor: 'rgba(99, 102, 241, 0.1)',
-          fill: true,
-          tension: 0.4,
-          pointRadius: 0,
-          borderWidth: 2,
-        }]
-      };
+  const prepareChartData = (watchlist: Watchlist[], selectedStocks: string[], range: TimeRange) => {
+    if (watchlist.length === 0 || selectedStocks.length === 0) {
+      return { labels: [], datasets: [] };
     }
-
+    const firstStock = watchlist.find(stock => selectedStocks.includes(stock.symbol));
+    if (!firstStock || !firstStock.historicalData) {
+      return { labels: [], datasets: [] };
+    }
     const now = new Date();
     const cutoff = new Date(now);
-    cutoff.setDate(now.getDate() - (range === '1D' ? 1 : range === '7D' ? 7 : range === '30D' ? 30 : 365));
+    cutoff.setDate(now.getDate() - 30);
+    const filteredData = firstStock.historicalData.filter(item => new Date(item.date) >= cutoff);
+    const labels = filteredData.map(item => new Date(item.date).toLocaleDateString([], { month: 'short', day: 'numeric' }));
 
-    const filteredData = data.filter(item => {
-      const itemDate = new Date(item.date);
-      return itemDate >= cutoff;
-    });
-
-    return {
-      labels: filteredData.map(item => {
-        const date = new Date(item.date);
-        if (range === '1D') {
-          return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
-        } else if (range === '1Y') {
-          return date.toLocaleDateString([], { month: 'short', year: '2-digit' });
-        }
-        return date.toLocaleDateString([], { month: 'short', day: 'numeric' });
-      }),
-      datasets: [{
-        label: 'Price',
-        data: filteredData.map(item => item.price),
-        borderColor: 'rgb(99, 102, 241)',
-        backgroundColor: 'rgba(99, 102, 241, 0.1)',
-        fill: true,
+    const datasets = selectedStocks.map((symbol, index) => {
+      const stock = watchlist.find(s => s.symbol === symbol);
+      if (!stock || !stock.historicalData) return null;
+      const color = colors[index % colors.length];
+      return {
+        label: symbol,
+        data: stock.historicalData
+          .filter(item => new Date(item.date) >= cutoff)
+          .map(item => item.price),
+        borderColor: color,
+        backgroundColor: `${color}20`,
+        fill: false,
         tension: 0.4,
-        pointRadius: range === '1D' ? 2 : 0,
-        borderWidth: 2,
-      }]
-    };
+        pointRadius: 0,
+        borderWidth: 2
+      };
+    }).filter(dataset => dataset !== null);
+
+    return { labels, datasets };
   };
 
   const chartOptions = {
     responsive: true,
     maintainAspectRatio: false,
     plugins: {
-      legend: { display: false },
+      legend: { display: true, position: 'top' as const },
       tooltip: {
         mode: 'index' as const,
         intersect: false,
         callbacks: {
-          label: (context: any) => `$${context.parsed.y.toFixed(2)}`,
-          title: (context: any) => {
-            const date = new Date(context[0].label);
-            if (timeRange === '1D') {
-              return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
-            } else if (timeRange === '1Y') {
-              return date.toLocaleDateString([], { month: 'short', year: '2-digit' });
-            }
-            return date.toLocaleDateString([], { month: 'short', day: 'numeric' });
-          }
+          label: (context: any) => `${context.dataset.label}: $${context.parsed.y.toFixed(2)}`
         }
       }
     },
     scales: {
-      x: {
-        grid: { display: false },
-        ticks: {
-          maxRotation: 0,
-          autoSkip: true,
-          maxTicksLimit: timeRange === '1D' ? 12 : timeRange === '1Y' ? 12 : 6,
-          callback: (value: any, index: number) => {
-            if (timeRange === '1D') return index % 2 === 0 ? value : '';
-            if (timeRange === '1Y') return index % 3 === 0 ? value : '';
-            return value;
-          }
-        }
-      },
+      x: { grid: { display: false } },
       y: {
         position: 'right' as const,
         grid: { color: 'rgba(156, 163, 175, 0.1)' },
         ticks: { callback: (value: any) => `$${value.toFixed(2)}` }
       }
-    },
-    interaction: {
-      mode: 'nearest' as const,
-      axis: 'x' as const,
-      intersect: false
     }
   };
 
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-gray-50 dark:bg-dark-bg flex items-center justify-center">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600 dark:border-indigo-400"></div>
-      </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <div className="min-h-screen bg-gray-50 dark:bg-dark-bg flex items-center justify-center">
-        <div className="bg-white dark:bg-dark-surface p-8 rounded-lg shadow-md max-w-md w-full">
-          <h2 className="text-2xl font-bold text-red-600 dark:text-red-400 mb-4">Error</h2>
-          <p className="text-gray-600 dark:text-gray-300 mb-4">{error}</p>
-          <button
-            onClick={() => window.location.reload()}
-            className="w-full bg-indigo-600 dark:bg-indigo-500 text-white py-2 px-4 rounded-md hover:bg-indigo-700 dark:hover:bg-indigo-400 transition-colors"
-          >
-            Try Again
-          </button>
-        </div>
-      </div>
-    );
-  }
+  if (loading) return <div className="min-h-screen bg-gray-50 dark:bg-dark-bg flex items-center justify-center"><div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600 dark:border-indigo-400"></div></div>;
+  if (recommendationsError || watchlistError) return <div className="min-h-screen bg-gray-50 dark:bg-dark-bg flex items-center justify-center"><div className="bg-white dark:bg-dark-surface p-8 rounded-lg shadow-md max-w-md w-full"><h2 className="text-2xl font-bold text-red-600 dark:text-red-400 mb-4">Error</h2><p className="text-gray-600 dark:text-gray-300 mb-4">{recommendationsError || watchlistError}</p><button onClick={() => window.location.reload()} className="w-full bg-indigo-600 text-white py-2 px-4 rounded-md hover:bg-indigo-700">Try Again</button></div></div>;
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-dark-bg">
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        <h1 className="text-3xl font-bold text-gray-900 dark:text-dark-text mb-8">Stock Recommendations and Watchlist</h1>
         <div className="grid grid-cols-12 gap-6">
-          {/* Main Content */}
-          <div className="col-span-12 lg:col-span-8">
-            {/* Top Recommendations Section */}
-            <div className="bg-white dark:bg-dark-surface rounded-lg shadow-sm p-6 mb-6">
-              <h2 className="text-2xl font-bold text-gray-900 dark:text-dark-text mb-6">Top Stock Recommendations</h2>
-              <div className="space-y-6">
-                {recommendations.map((stock, index) => (
-                  <div
-                    key={stock.symbol}
-                    className="bg-gray-50 dark:bg-gray-800 rounded-lg p-6 cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700"
-                    onClick={() => handleStockSelect(stock.symbol)}
-                  >
-                    <div className="flex justify-between items-start mb-4">
-                      <div>
-                        <div className="flex items-center space-x-2">
-                          <span className="text-lg font-medium text-indigo-600 dark:text-indigo-400">#{index + 1}</span>
-                          <h3 className="text-xl font-bold text-gray-900 dark:text-dark-text">{stock.symbol}</h3>
-                          <span className="text-lg text-gray-600 dark:text-gray-400">{stock.name}</span>
-                        </div>
-                        <div className="mt-2">
-                          <p className="text-sm text-gray-600 dark:text-gray-400">{stock.recommendationReason}</p>
-                        </div>
-                      </div>
-                      <div className="text-right">
-                        <p className="text-2xl font-bold text-gray-900 dark:text-dark-text">
-                          ${(stock.currentPrice || 0).toFixed(2)}
-                        </p>
-                        <p className={`text-lg font-medium ${
-                          (stock.change || 0) >= 0
-                            ? 'text-green-600 dark:text-green-400'
-                            : 'text-red-600 dark:text-red-400'
-                        }`}>
-                          {(stock.change || 0) >= 0 ? '+' : ''}{(stock.change || 0).toFixed(2)} ({(stock.changePercent || 0).toFixed(2)}%)
-                        </p>
-                      </div>
-                    </div>
-                    <div className="mt-4">
-                      <div className="h-48">
-                        <Line
-                          data={prepareChartData(stock.historicalData, timeRange)}
-                          options={chartOptions}
-                        />
-                      </div>
-                    </div>
-                    <div className="mt-4 grid grid-cols-3 gap-4 text-sm">
-                      <div>
-                        <p className="text-gray-500 dark:text-gray-400">Volume</p>
-                        <p className="font-medium text-gray-900 dark:text-dark-text">
-                          {(stock.volume || 0).toLocaleString()}
-                        </p>
-                      </div>
-                      <div>
-                        <p className="text-gray-500 dark:text-gray-400">Market Cap</p>
-                        <p className="font-medium text-gray-900 dark:text-dark-text">
-                          ${((stock.marketCap || 0) / 1e9).toFixed(2)}B
-                        </p>
-                      </div>
-                      <div>
-                        <p className="text-gray-500 dark:text-gray-400">Recommendation</p>
-                        <p className="font-medium text-green-600 dark:text-green-400">
-                          {stock.recommendation}
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* Selected Stock Details */}
-            {selectedStock && (
-              <div className="bg-white dark:bg-dark-surface rounded-lg shadow-sm p-6">
-                {/* Stock details content (similar to investing.tsx) */}
-                {/* ... Add the stock details section from investing.tsx ... */}
-              </div>
-            )}
-          </div>
-
-          {/* Sidebar */}
-          <div className="col-span-12 lg:col-span-4">
-            {/* Watchlist Section */}
-            <div className="bg-white dark:bg-dark-surface rounded-lg shadow-sm p-6">
-              <h2 className="text-xl font-bold text-gray-900 dark:text-dark-text mb-4">Your Watchlist</h2>
+          <div className="col-span-12">
+            {/* Watchlist - Now appears first */}
+            <div className="bg-white dark:bg-dark-surface rounded-lg shadow-md p-6 mb-6">
+              <h2 className="text-2xl font-bold text-gray-900 dark:text-dark-text mb-6">Your Watchlist</h2>
               {watchlist.length > 0 ? (
-                <div className="space-y-4">
-                  {watchlist.map((stock) => (
-                    <div
-                      key={stock.id}
-                      className="bg-gray-50 dark:bg-gray-800 rounded-lg p-4 cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700"
-                      onClick={() => handleStockSelect(stock.symbol)}
-                    >
-                      <div className="flex justify-between items-start">
-                        <div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {watchlist.map((stock, index) => (
+                    <div key={stock.id} className="bg-gray-50 dark:bg-gray-800 rounded-lg p-4 shadow-sm hover:shadow-md transition-shadow">
+                      <div className="flex items-center space-x-2 mb-2">
+                        <div className="w-3 h-3 rounded-full" style={{ backgroundColor: colors[index % colors.length] }}></div>
+                        <input
+                          type="checkbox"
+                          checked={selectedStocks.includes(stock.symbol)}
+                          onChange={() => setSelectedStocks(prev =>
+                            prev.includes(stock.symbol) ? prev.filter(s => s !== stock.symbol) : [...prev, stock.symbol]
+                          )}
+                          className="cursor-pointer"
+                        />
+                        <div onClick={() => handleStockSelect(stock.symbol)} className="cursor-pointer flex-1">
                           <p className="text-sm font-medium text-gray-900 dark:text-dark-text">{stock.symbol}</p>
                           <p className="text-xs text-gray-500 dark:text-gray-400">{stock.name}</p>
                         </div>
-                        <div className="text-right">
-                          <p className="text-sm font-medium text-gray-900 dark:text-dark-text">
-                            ${(stock.currentPrice || 0).toFixed(2)}
-                          </p>
-                          <p className={`text-xs ${
-                            (stock.change || 0) >= 0
-                              ? 'text-green-600 dark:text-green-400'
-                              : 'text-red-600 dark:text-red-400'
-                          }`}>
-                            {(stock.change || 0) >= 0 ? '+' : ''}{(stock.change || 0).toFixed(2)} ({(stock.changePercent || 0).toFixed(2)}%)
-                          </p>
-                        </div>
                       </div>
-                      {stock.sharesOwned > 0 && (
-                        <div className="mt-2 text-xs text-gray-500 dark:text-gray-400">
-                          <p>Owned: {(stock.sharesOwned || 0).toFixed(2)} shares (${(stock.totalValue || 0).toFixed(2)})</p>
-                        </div>
-                      )}
+                      <div className="flex justify-between items-center">
+                        <p className="text-sm font-medium text-gray-900 dark:text-dark-text">${stock.currentPrice.toFixed(2)}</p>
+                        <p className={`text-xs ${stock.change >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
+                          {stock.change >= 0 ? '+' : ''}{stock.change.toFixed(2)} ({stock.changePercent.toFixed(2)}%)
+                        </p>
+                      </div>
                     </div>
                   ))}
                 </div>
               ) : (
-                <p className="text-gray-500 dark:text-gray-400 text-sm">
-                  No stocks in watchlist. Add stocks from the recommendations above.
-                </p>
+                <p className="text-gray-500 dark:text-gray-400">No stocks in watchlist. Add from recommendations above.</p>
+              )}
+            </div>
+
+            {/* Price History Graph - Now appears second */}
+            <div className="bg-white dark:bg-dark-surface rounded-lg shadow-md p-6 mb-6">
+              <h2 className="text-2xl font-bold text-gray-900 dark:text-dark-text mb-6">Watchlist Price History (Last 30 Days)</h2>
+              {watchlist.length > 0 && selectedStocks.length > 0 ? (
+                <div className="h-[500px]">
+                  <Line
+                    data={prepareChartData(watchlist, selectedStocks, timeRange)}
+                    options={chartOptions}
+                  />
+                </div>
+              ) : (
+                <p className="text-gray-500 dark:text-gray-400">Select stocks from your watchlist to view price history.</p>
+              )}
+            </div>
+
+            {/* Top Recommendations - Now appears last */}
+            <div className="bg-white dark:bg-dark-surface rounded-lg shadow-md p-6">
+              <h2 className="text-2xl font-bold text-gray-900 dark:text-dark-text mb-6">Top 5 Recommended Stocks This Week</h2>
+              {recommendations.length > 0 ? (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                  {recommendations.slice(0, 5).map((stock, index) => (
+                    <div key={stock.symbol} className="bg-gray-50 dark:bg-gray-800 rounded-lg p-6 shadow-sm hover:shadow-md transition-shadow">
+                      <div className="flex justify-between items-start mb-4">
+                        <div>
+                          <div className="flex items-center space-x-2">
+                            <span className="text-lg font-medium text-indigo-600 dark:text-indigo-400">#{index + 1}</span>
+                            <h3 className="text-xl font-bold text-gray-900 dark:text-dark-text">{stock.symbol}</h3>
+                          </div>
+                          <p className="text-sm text-gray-600 dark:text-gray-400">{stock.name}</p>
+                          <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">{stock.recommendationReason}</p>
+                        </div>
+                        <div className="text-right">
+                          <p className="text-xl font-bold text-gray-900 dark:text-dark-text">${stock.currentPrice.toFixed(2)}</p>
+                          <p className={`text-sm ${stock.change >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
+                            {stock.change >= 0 ? '+' : ''}{stock.change.toFixed(2)} ({stock.changePercent.toFixed(2)}%)
+                          </p>
+                        </div>
+                      </div>
+                      <button
+                        onClick={(e) => { e.stopPropagation(); handleAddToWatchlist(stock.symbol); }}
+                        className="w-full bg-indigo-600 text-white py-2 rounded-md hover:bg-indigo-700 transition-colors"
+                      >
+                        Add to Watchlist
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-gray-500 dark:text-gray-400">No recommendations available at the moment.</p>
               )}
             </div>
           </div>
@@ -475,4 +528,4 @@ export default function Recommendations() {
       </main>
     </div>
   );
-} 
+}
