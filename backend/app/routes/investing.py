@@ -110,7 +110,7 @@ async def get_stock_data(symbol: str, db: Session) -> StockDetail:
         
         # Get historical data
         end_date = datetime.now()
-        start_date = end_date - timedelta(days=30)
+        start_date = end_date - timedelta(days=365)  # Changed to 1 year
         logger.info(f"Fetching historical data from {start_date} to {end_date}")
         
         try:
@@ -123,22 +123,22 @@ async def get_stock_data(symbol: str, db: Session) -> StockDetail:
                 intraday_hist = ticker.history(period="1d", interval="1h")
                 logger.info(f"1-hour interval data shape: {intraday_hist.shape if not intraday_hist.empty else 'Empty'}")
             
-            # Get daily data for the last 30 days
+            # Get daily data for the last year
             daily_hist = ticker.history(start=start_date, end=end_date, interval='1d')
             logger.info(f"Daily data shape: {daily_hist.shape if not daily_hist.empty else 'Empty'}")
             
             if daily_hist.empty:
-                logger.warning(f"No daily data available for {symbol} in 30-day range")
-                # Try getting a shorter period if 30 days fails
-                logger.info("Attempting to fetch 1-month period instead")
-                daily_hist = ticker.history(period="1mo", interval='1d')
-                logger.info(f"1-month period data shape: {daily_hist.shape if not daily_hist.empty else 'Empty'}")
+                logger.warning(f"No daily data available for {symbol} in 1-year range")
+                # Try getting a shorter period if 1 year fails
+                logger.info("Attempting to fetch 1-year period instead")
+                daily_hist = ticker.history(period="1y", interval='1d')
+                logger.info(f"1-year period data shape: {daily_hist.shape if not daily_hist.empty else 'Empty'}")
                 
                 if daily_hist.empty:
                     logger.warning(f"Still no daily data available for {symbol}")
                     # Try one last time with a different interval
                     logger.info("Attempting to fetch with 1d interval")
-                    daily_hist = ticker.history(period="1mo", interval='1d', auto_adjust=True)
+                    daily_hist = ticker.history(period="1y", interval='1d', auto_adjust=True)
                     logger.info(f"Final attempt data shape: {daily_hist.shape if not daily_hist.empty else 'Empty'}")
         except Exception as e:
             logger.error(f"Error fetching historical data for {symbol}: {str(e)}")

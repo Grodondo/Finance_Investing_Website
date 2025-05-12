@@ -75,8 +75,8 @@ interface SearchResult {
   name: string;
 }
 
-// Add time range type
-type TimeRange = '1D' | '7D' | '30D';
+// Update the TimeRange type
+type TimeRange = '1D' | '7D' | '30D' | '1Y';
 
 export default function Investing() {
   const { user, logout, getAuthHeader, isAuthenticated } = useAuth();
@@ -420,7 +420,7 @@ export default function Investing() {
     }
   };
 
-  // Add function to filter historical data based on time range
+  // Update the getFilteredHistoricalData function
   const getFilteredHistoricalData = (data: Stock['historicalData'] | undefined, range: TimeRange) => {
     console.log('Raw historical data:', data);
     
@@ -438,7 +438,8 @@ export default function Investing() {
     const ranges = {
       '1D': 1,
       '7D': 7,
-      '30D': 30
+      '30D': 30,
+      '1Y': 365
     };
     const days = ranges[range];
     
@@ -448,7 +449,7 @@ export default function Investing() {
       // For 1D, get data from exactly 24 hours ago
       cutoff.setHours(now.getHours() - 24);
     } else {
-      // For 7D and 30D, get data from the start of the day N days ago
+      // For other ranges, get data from the start of the day N days ago
       cutoff.setDate(now.getDate() - days);
       cutoff.setHours(0, 0, 0, 0);
     }
@@ -476,28 +477,25 @@ export default function Investing() {
         return itemDate >= cutoff;
       });
       console.log('1D view - Filtered intraday data points:', filtered.length);
-      if (filtered.length > 0) {
-        console.log('First intraday point:', filtered[0]);
-        console.log('Last intraday point:', filtered[filtered.length - 1]);
-      }
     } else {
-      // For 7D and 30D views, use only daily data
+      // For 7D, 30D, and 1Y views, use only daily data
       filtered = dailyData.filter(item => {
         const itemDate = new Date(item.date);
         return itemDate >= cutoff;
       });
       
       console.log(`${range} view - Filtered daily data points:`, filtered.length);
-      if (filtered.length > 0) {
-        console.log('First daily point:', filtered[0]);
-        console.log('Last daily point:', filtered[filtered.length - 1]);
-      }
+    }
+    
+    if (filtered.length > 0) {
+      console.log('First filtered point:', filtered[0]);
+      console.log('Last filtered point:', filtered[filtered.length - 1]);
     }
     
     return filtered;
   };
 
-  // Add function to prepare chart data
+  // Update the prepareChartData function to handle 1Y view
   const prepareChartData = (data: Stock['historicalData'] | undefined, range: TimeRange) => {
     console.log('Preparing chart data for range:', range);
     
@@ -529,7 +527,13 @@ export default function Investing() {
           return date.toLocaleTimeString([], { 
             hour: '2-digit', 
             minute: '2-digit',
-            hour12: false // Use 24-hour format
+            hour12: false
+          });
+        } else if (range === '1Y') {
+          // For 1Y view, show month and year
+          return date.toLocaleDateString([], { 
+            month: 'short', 
+            year: '2-digit'
           });
         } else {
           // For other ranges, show month and day
@@ -553,20 +557,10 @@ export default function Investing() {
       ]
     };
     
-    console.log('Final chart data:', {
-      labels: chartData.labels,
-      dataPoints: chartData.datasets[0].data.length,
-      firstPoint: { label: chartData.labels[0], price: chartData.datasets[0].data[0] },
-      lastPoint: { 
-        label: chartData.labels[chartData.labels.length - 1], 
-        price: chartData.datasets[0].data[chartData.datasets[0].data.length - 1] 
-      }
-    });
-    
     return chartData;
   };
 
-  // Add chart options
+  // Update chart options to handle 1Y view
   const chartOptions = {
     responsive: true,
     maintainAspectRatio: false,
@@ -587,6 +581,11 @@ export default function Investing() {
                 minute: '2-digit',
                 hour12: false 
               });
+            } else if (timeRange === '1Y') {
+              return date.toLocaleDateString([], { 
+                month: 'short', 
+                year: '2-digit'
+              });
             }
             return date.toLocaleDateString([], { 
               month: 'short', 
@@ -604,11 +603,14 @@ export default function Investing() {
         ticks: {
           maxRotation: 0,
           autoSkip: true,
-          maxTicksLimit: timeRange === '1D' ? 12 : 6, // More ticks for intraday view
+          maxTicksLimit: timeRange === '1D' ? 12 : timeRange === '1Y' ? 12 : 6, // Adjust ticks based on range
           callback: (value: any, index: number, values: any[]) => {
             if (timeRange === '1D') {
               // For intraday, show every 2nd tick to avoid crowding
               return index % 2 === 0 ? value : '';
+            } else if (timeRange === '1Y') {
+              // For 1Y view, show every 3rd tick
+              return index % 3 === 0 ? value : '';
             }
             return value;
           }
@@ -772,70 +774,129 @@ export default function Investing() {
             {/* Stock Details */}
             {selectedStock && (
               <div className="bg-white dark:bg-dark-surface rounded-lg shadow-sm p-6">
+                {/* Header Section */}
                 <div className="flex justify-between items-start mb-6">
                   <div>
-                    <h2 className="text-lg font-medium text-gray-900 dark:text-dark-text">{selectedStock.name} ({selectedStock.symbol})</h2>
-                    <div className="flex items-baseline space-x-4 mt-1">
-                      <span className="text-2xl font-bold text-gray-900 dark:text-dark-text">
+                    <div className="flex items-center space-x-2">
+                      <h2 className="text-2xl font-bold text-gray-900 dark:text-dark-text">{selectedStock.symbol}</h2>
+                      <span className="text-lg text-gray-600 dark:text-gray-400">{selectedStock.name}</span>
+                    </div>
+                    <div className="flex items-baseline space-x-4 mt-2">
+                      <span className="text-3xl font-bold text-gray-900 dark:text-dark-text">
                         ${selectedStock.currentPrice?.toFixed(2) ?? '0.00'}
                       </span>
-                      <span className={`text-lg font-medium ${
+                      <span className={`text-xl font-medium ${
                         (selectedStock.change ?? 0) >= 0
                           ? 'text-green-600 dark:text-green-400'
                           : 'text-red-600 dark:text-red-400'
                       }`}>
                         {(selectedStock.change ?? 0) >= 0 ? '+' : ''}{(selectedStock.change ?? 0).toFixed(2)} ({(selectedStock.changePercent ?? 0).toFixed(2)}%)
                       </span>
-                    </div>
-                    <div className="mt-2 grid grid-cols-2 gap-4 text-sm text-gray-500 dark:text-gray-400">
-                      <div>
-                        <p>Volume: {selectedStock.volume?.toLocaleString() ?? '0'}</p>
-                        <p>Market Cap: ${(selectedStock.marketCap / 1e9).toFixed(2)}B</p>
-                      </div>
-                      <div>
-                        <p>52W High: ${selectedStock.fiftyTwoWeekHigh?.toFixed(2) ?? 'N/A'}</p>
-                        <p>52W Low: ${selectedStock.fiftyTwoWeekLow?.toFixed(2) ?? 'N/A'}</p>
-                      </div>
+                      <span className="text-sm text-gray-500 dark:text-gray-400">
+                        {new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} EDT
+                      </span>
                     </div>
                   </div>
                   <div className="flex space-x-2">
                     <button
                       onClick={() => handleAddToWatchlist(selectedStock.symbol)}
-                      className="px-3 py-1 text-sm text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300"
+                      className="px-4 py-2 text-sm font-medium text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 rounded-md"
                     >
                       Add to Watchlist
                     </button>
                   </div>
                 </div>
 
-                {/* Chart Component */}
+                {/* Stats Grid */}
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+                  <div className="bg-gray-50 dark:bg-gray-800 p-4 rounded-lg">
+                    <p className="text-sm text-gray-500 dark:text-gray-400">Market Cap</p>
+                    <p className="text-lg font-medium text-gray-900 dark:text-dark-text">
+                      ${(selectedStock.marketCap / 1e9).toFixed(2)}B
+                    </p>
+                  </div>
+                  <div className="bg-gray-50 dark:bg-gray-800 p-4 rounded-lg">
+                    <p className="text-sm text-gray-500 dark:text-gray-400">Volume</p>
+                    <p className="text-lg font-medium text-gray-900 dark:text-dark-text">
+                      {selectedStock.volume?.toLocaleString() ?? '0'}
+                    </p>
+                  </div>
+                  <div className="bg-gray-50 dark:bg-gray-800 p-4 rounded-lg">
+                    <p className="text-sm text-gray-500 dark:text-gray-400">52 Week Range</p>
+                    <p className="text-lg font-medium text-gray-900 dark:text-dark-text">
+                      ${selectedStock.fiftyTwoWeekLow?.toFixed(2) ?? 'N/A'} - ${selectedStock.fiftyTwoWeekHigh?.toFixed(2) ?? 'N/A'}
+                    </p>
+                  </div>
+                  <div className="bg-gray-50 dark:bg-gray-800 p-4 rounded-lg">
+                    <p className="text-sm text-gray-500 dark:text-gray-400">Day Range</p>
+                    <p className="text-lg font-medium text-gray-900 dark:text-dark-text">
+                      {selectedStock.historicalData && selectedStock.historicalData.length > 0 ? (
+                        <>
+                          ${Math.min(...selectedStock.historicalData.map(d => d.price)).toFixed(2)} - 
+                          ${Math.max(...selectedStock.historicalData.map(d => d.price)).toFixed(2)}
+                        </>
+                      ) : 'N/A'}
+                    </p>
+                  </div>
+                </div>
+
+                {/* Chart Section */}
                 <div className="mb-6">
                   <div className="flex justify-between items-center mb-4">
-                    <h3 className="text-sm font-medium text-gray-900 dark:text-dark-text">Price History</h3>
-                    <div className="flex space-x-2">
-                      {(['1D', '7D', '30D'] as TimeRange[]).map((range) => (
-                        <button
-                          key={range}
-                          onClick={() => {
-                            console.log('Changing time range to:', range);
-                            setTimeRange(range);
-                          }}
-                          className={`px-3 py-1 text-xs font-medium rounded-md ${
-                            timeRange === range
-                              ? 'bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300'
-                              : 'bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700'
-                          }`}
-                        >
-                          {range}
-                        </button>
-                      ))}
+                    <div className="flex items-center space-x-4">
+                      <h3 className="text-lg font-medium text-gray-900 dark:text-dark-text">Price History</h3>
+                      <div className="flex space-x-2">
+                        {(['1D', '7D', '30D', '1Y'] as TimeRange[]).map((range) => (
+                          <button
+                            key={range}
+                            onClick={() => setTimeRange(range)}
+                            className={`px-3 py-1 text-sm font-medium rounded-md transition-colors ${
+                              timeRange === range
+                                ? 'bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300'
+                                : 'bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700'
+                            }`}
+                          >
+                            {range}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    <div className="text-sm text-gray-500 dark:text-gray-400">
+                      {timeRange === '1D' ? 'Intraday' : timeRange === '1Y' ? '1 Year' : 'Daily'} data
                     </div>
                   </div>
-                  <div className="h-64">
+                  <div className="h-96 bg-gray-50 dark:bg-gray-800 rounded-lg p-4">
                     {selectedStock?.historicalData && selectedStock.historicalData.length > 0 ? (
                       <Line
                         data={prepareChartData(selectedStock.historicalData, timeRange)}
-                        options={chartOptions}
+                        options={{
+                          ...chartOptions,
+                          plugins: {
+                            ...chartOptions.plugins,
+                            tooltip: {
+                              ...chartOptions.plugins.tooltip,
+                              backgroundColor: 'rgba(255, 255, 255, 0.9)',
+                              titleColor: '#000',
+                              bodyColor: '#000',
+                              borderColor: '#e5e7eb',
+                              borderWidth: 1,
+                              padding: 12,
+                              displayColors: false,
+                              callbacks: {
+                                ...chartOptions.plugins.tooltip.callbacks,
+                                label: (context: any) => {
+                                  const value = context.parsed.y;
+                                  const change = value - selectedStock.historicalData[0].price;
+                                  const changePercent = (change / selectedStock.historicalData[0].price) * 100;
+                                  return [
+                                    `$${value.toFixed(2)}`,
+                                    `${change >= 0 ? '+' : ''}${change.toFixed(2)} (${changePercent.toFixed(2)}%)`
+                                  ];
+                                }
+                              }
+                            }
+                          }
+                        }}
                       />
                     ) : (
                       <div className="h-full flex items-center justify-center text-gray-500 dark:text-gray-400">
@@ -845,8 +906,74 @@ export default function Investing() {
                   </div>
                 </div>
 
+                {/* Additional Stats Section */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div className="bg-gray-50 dark:bg-gray-800 rounded-lg p-4">
+                    <h4 className="text-lg font-medium text-gray-900 dark:text-dark-text mb-4">Statistics</h4>
+                    <div className="space-y-3">
+                      <div className="flex justify-between">
+                        <span className="text-sm text-gray-500 dark:text-gray-400">Previous Close</span>
+                        <span className="text-sm font-medium text-gray-900 dark:text-dark-text">
+                          ${selectedStock.historicalData?.[0]?.price.toFixed(2) ?? 'N/A'}
+                        </span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-sm text-gray-500 dark:text-gray-400">Open</span>
+                        <span className="text-sm font-medium text-gray-900 dark:text-dark-text">
+                          ${selectedStock.historicalData?.[0]?.price.toFixed(2) ?? 'N/A'}
+                        </span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-sm text-gray-500 dark:text-gray-400">Day's Range</span>
+                        <span className="text-sm font-medium text-gray-900 dark:text-dark-text">
+                          {selectedStock.historicalData && selectedStock.historicalData.length > 0 ? (
+                            <>
+                              ${Math.min(...selectedStock.historicalData.map(d => d.price)).toFixed(2)} - 
+                              ${Math.max(...selectedStock.historicalData.map(d => d.price)).toFixed(2)}
+                            </>
+                          ) : 'N/A'}
+                        </span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-sm text-gray-500 dark:text-gray-400">52 Week Range</span>
+                        <span className="text-sm font-medium text-gray-900 dark:text-dark-text">
+                          ${selectedStock.fiftyTwoWeekLow?.toFixed(2) ?? 'N/A'} - ${selectedStock.fiftyTwoWeekHigh?.toFixed(2) ?? 'N/A'}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="bg-gray-50 dark:bg-gray-800 rounded-lg p-4">
+                    <h4 className="text-lg font-medium text-gray-900 dark:text-dark-text mb-4">Trading Information</h4>
+                    <div className="space-y-3">
+                      <div className="flex justify-between">
+                        <span className="text-sm text-gray-500 dark:text-gray-400">Volume</span>
+                        <span className="text-sm font-medium text-gray-900 dark:text-dark-text">
+                          {selectedStock.volume?.toLocaleString() ?? 'N/A'}
+                        </span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-sm text-gray-500 dark:text-gray-400">Market Cap</span>
+                        <span className="text-sm font-medium text-gray-900 dark:text-dark-text">
+                          ${(selectedStock.marketCap / 1e9).toFixed(2)}B
+                        </span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-sm text-gray-500 dark:text-gray-400">Avg. Volume (30d)</span>
+                        <span className="text-sm font-medium text-gray-900 dark:text-dark-text">
+                          {selectedStock.volume?.toLocaleString() ?? 'N/A'}
+                        </span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-sm text-gray-500 dark:text-gray-400">Beta (5Y Monthly)</span>
+                        <span className="text-sm font-medium text-gray-900 dark:text-dark-text">N/A</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
                 {stockError && (
-                  <div className="mb-4 p-4 bg-yellow-50 dark:bg-yellow-900/20 rounded-lg">
+                  <div className="mt-4 p-4 bg-yellow-50 dark:bg-yellow-900/20 rounded-lg">
                     <p className="text-sm text-yellow-700 dark:text-yellow-300">{stockError}</p>
                   </div>
                 )}
