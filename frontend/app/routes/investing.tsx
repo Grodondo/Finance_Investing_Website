@@ -208,7 +208,10 @@ export default function Investing() {
     setIsSearching(true);
     try {
       const authHeader = getAuthHeader();
-      if (!authHeader) return;
+      if (!authHeader) {
+        navigate("/login");
+        return;
+      }
 
       const response = await fetch(`/api/stocks/search?q=${encodeURIComponent(query)}`, {
         headers: {
@@ -216,6 +219,13 @@ export default function Investing() {
           "Content-Type": "application/json"
         }
       });
+
+      if (response.status === 401) {
+        // Token expired or invalid
+        await logout();
+        navigate("/login");
+        return;
+      }
 
       if (!response.ok) {
         throw new Error("Failed to search stocks");
@@ -225,6 +235,9 @@ export default function Investing() {
       setSearchResults(data);
     } catch (error) {
       console.error("Error searching stocks:", error);
+      if (error instanceof Error && error.message.includes("Not authenticated")) {
+        navigate("/login");
+      }
       setSearchResults([]);
     } finally {
       setIsSearching(false);
