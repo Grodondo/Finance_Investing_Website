@@ -296,17 +296,33 @@ export default function Investing() {
       const authHeader = getAuthHeader();
       if (!authHeader) return;
 
+      // First, get the stock ID by fetching the stock data
+      const stockResponse = await fetch(`/api/stocks/${symbol}`, {
+        headers: {
+          ...authHeader,
+          "Content-Type": "application/json"
+        }
+      });
+
+      if (!stockResponse.ok) {
+        throw new Error("Failed to fetch stock data");
+      }
+
+      const stockData = await stockResponse.json();
+
+      // Now add to watchlist using the stock ID
       const response = await fetch("/api/watchlist", {
         method: "POST",
         headers: {
           ...authHeader,
           "Content-Type": "application/json"
         },
-        body: JSON.stringify({ symbol })
+        body: JSON.stringify({ stock_id: stockData.id })
       });
 
       if (!response.ok) {
-        throw new Error("Failed to add to watchlist");
+        const errorData = await response.json();
+        throw new Error(errorData.detail || "Failed to add to watchlist");
       }
 
       // Refresh watchlist
@@ -327,16 +343,16 @@ export default function Investing() {
       setSearchResults([]);
     } catch (error) {
       console.error("Error adding to watchlist:", error);
-      setError("Failed to add stock to watchlist");
+      setError(error instanceof Error ? error.message : "Failed to add stock to watchlist");
     }
   };
 
-  const handleRemoveFromWatchlist = async (symbol: string) => {
+  const handleRemoveFromWatchlist = async (stockId: number) => {
     try {
       const authHeader = getAuthHeader();
       if (!authHeader) return;
 
-      const response = await fetch(`/api/watchlist/${symbol}`, {
+      const response = await fetch(`/api/watchlist/${stockId}`, {
         method: "DELETE",
         headers: {
           ...authHeader,
@@ -345,7 +361,8 @@ export default function Investing() {
       });
 
       if (!response.ok) {
-        throw new Error("Failed to remove from watchlist");
+        const errorData = await response.json();
+        throw new Error(errorData.detail || "Failed to remove from watchlist");
       }
 
       // Refresh watchlist
@@ -362,7 +379,7 @@ export default function Investing() {
       }
     } catch (error) {
       console.error("Error removing from watchlist:", error);
-      setError("Failed to remove stock from watchlist");
+      setError(error instanceof Error ? error.message : "Failed to remove stock from watchlist");
     }
   };
 
@@ -1121,7 +1138,7 @@ export default function Investing() {
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
-                          handleRemoveFromWatchlist(stock.symbol);
+                          handleRemoveFromWatchlist(stock.id);
                         }}
                         className="ml-4 text-sm text-red-600 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300"
                       >
