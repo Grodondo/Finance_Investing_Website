@@ -427,12 +427,25 @@ export default function Recommendations() {
     }
   };
 
-  if (loading) return <div className="min-h-screen bg-gray-50 dark:bg-dark-bg flex items-center justify-center"><div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600 dark:border-indigo-400"></div></div>;
-  if (recommendationsError || watchlistError) return <div className="min-h-screen bg-gray-50 dark:bg-dark-bg flex items-center justify-center"><div className="bg-white dark:bg-dark-surface p-8 rounded-lg shadow-md max-w-md w-full"><h2 className="text-2xl font-bold text-red-600 dark:text-red-400 mb-4">Error</h2><p className="text-gray-600 dark:text-gray-300 mb-4">{recommendationsError || watchlistError}</p><button onClick={() => window.location.reload()} className="w-full bg-indigo-600 text-white py-2 px-4 rounded-md hover:bg-indigo-700">Try Again</button></div></div>;
+  if (loading) return (
+    <div className="min-h-screen pt-16 bg-gray-50 dark:bg-dark-bg flex items-center justify-center">
+      <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600 dark:border-indigo-400"></div>
+    </div>
+  );
+
+  if (recommendationsError || watchlistError) return (
+    <div className="min-h-screen pt-16 bg-gray-50 dark:bg-dark-bg flex items-center justify-center">
+      <div className="bg-white dark:bg-dark-surface p-8 rounded-lg shadow-md max-w-md w-full">
+        <h2 className="text-2xl font-bold text-red-600 dark:text-red-400 mb-4">Error</h2>
+        <p className="text-gray-600 dark:text-gray-300 mb-4">{recommendationsError || watchlistError}</p>
+        <button onClick={() => window.location.reload()} className="w-full bg-indigo-600 text-white py-2 px-4 rounded-md hover:bg-indigo-700">Try Again</button>
+      </div>
+    </div>
+  );
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-dark-bg">
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 pt-24">
         <h1 className="text-3xl font-bold text-gray-900 dark:text-dark-text mb-8">Stock Recommendations and Watchlist</h1>
         <div className="grid grid-cols-12 gap-6">
           <div className="col-span-12">

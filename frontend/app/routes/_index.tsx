@@ -38,7 +38,7 @@ export default function Index() {
           </div>
         </nav>
 
-        <div className="mx-auto max-w-2xl lg:mx-0 lg:max-w-xl lg:flex-shrink-0 lg:pt-8 mt-16">
+        <div className="pt-16">
           <h1 className="mt-10 text-4xl font-bold tracking-tight text-gray-900 dark:text-dark-text sm:text-6xl">
             AI-Powered Personal Finance Manager
           </h1>
