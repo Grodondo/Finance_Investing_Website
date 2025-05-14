@@ -89,7 +89,7 @@ interface Watchlist {
   }[];
 }
 
-type TimeRange = '1D' | '7D' | '30D' | '1Y';
+type TimeRange = '1D' | '7D' | '30D' | '1Y' | '5Y';
 
 export default function Recommendations() {
   const { user, getAuthHeader, isAuthenticated } = useAuth();
@@ -101,7 +101,7 @@ export default function Recommendations() {
   const [recommendationsError, setRecommendationsError] = useState<string | null>(null);
   const [watchlistError, setWatchlistError] = useState<string | null>(null);
   const [selectedStock, setSelectedStock] = useState<Stock | null>(null);
-  const [timeRange] = useState<TimeRange>('30D');
+  const [timeRange, setTimeRange] = useState<TimeRange>('1Y');
   const [isLoadingStock, setIsLoadingStock] = useState(false);
   const [stockError, setStockError] = useState<string | null>(null);
   const [isPageLoaded, setIsPageLoaded] = useState(false);
@@ -431,12 +431,32 @@ export default function Recommendations() {
     const endDate = new Date();
     endDate.setHours(0, 0, 0, 0);
 
-    // Set the start date to exactly one year before today
+    // Set the start date based on the selected range
     const startDate = new Date(endDate);
-    startDate.setFullYear(endDate.getFullYear() - 1);
+    switch (range) {
+      case '7D':
+        startDate.setDate(endDate.getDate() - 7);
+        break;
+      case '30D':
+        startDate.setDate(endDate.getDate() - 30);
+        break;
+      case '1Y':
+        startDate.setFullYear(endDate.getFullYear() - 1);
+        break;
+      case '5Y':
+        startDate.setFullYear(endDate.getFullYear() - 5);
+        break;
+    }
 
-    // Use all dates instead of sampling
-    const sampledDates = sortedDates;
+    // Filter dates based on the selected range
+    const filteredDates = sortedDates.filter(date => {
+      const dateObj = new Date(date);
+      dateObj.setHours(0, 0, 0, 0);
+      return dateObj >= startDate && dateObj <= endDate;
+    });
+
+    // Use filtered dates instead of all dates
+    const sampledDates = filteredDates;
 
     // Create datasets for each selected stock
     const datasets = selectedStocks.map((symbol, index) => {
@@ -539,13 +559,17 @@ export default function Recommendations() {
             maxRotation: 45,
             minRotation: 45,
             autoSkip: true,
-            maxTicksLimit: 20, // Show more date labels
+            maxTicksLimit: range === '7D' ? 7 : range === '30D' ? 15 : 20, // Adjust number of ticks based on range
             font: {
-              size: 10 // Slightly smaller font to fit more labels
+              size: 10
             },
             callback: (value: any, index: number) => {
               const date = new Date(sampledDates[index]);
-              if (date > oneMonthAgo) {
+              if (range === '7D') {
+                return date.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' });
+              } else if (range === '30D') {
+                return date.toLocaleDateString([], { month: 'short', day: 'numeric' });
+              } else if (date > oneMonthAgo) {
                 return date.toLocaleDateString([], { month: 'short', day: 'numeric' });
               }
               return date.toLocaleDateString([], { month: 'short', year: '2-digit' });
@@ -632,7 +656,51 @@ export default function Recommendations() {
 
             {/* Price History Graph - Now appears second */}
             <div className="bg-white dark:bg-dark-surface rounded-lg shadow-md p-6 mb-6">
-              <h2 className="text-2xl font-bold text-gray-900 dark:text-dark-text mb-6">Watchlist Price History (Last 30 Days)</h2>
+              <div className="flex justify-between items-center mb-6">
+                <h2 className="text-2xl font-bold text-gray-900 dark:text-dark-text">Watchlist Price History</h2>
+                <div className="flex space-x-2">
+                  <button
+                    onClick={() => setTimeRange('7D')}
+                    className={`px-3 py-1 rounded-md text-sm font-medium ${
+                      timeRange === '7D'
+                        ? 'bg-indigo-600 text-white'
+                        : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
+                    }`}
+                  >
+                    7D
+                  </button>
+                  <button
+                    onClick={() => setTimeRange('30D')}
+                    className={`px-3 py-1 rounded-md text-sm font-medium ${
+                      timeRange === '30D'
+                        ? 'bg-indigo-600 text-white'
+                        : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
+                    }`}
+                  >
+                    30D
+                  </button>
+                  <button
+                    onClick={() => setTimeRange('1Y')}
+                    className={`px-3 py-1 rounded-md text-sm font-medium ${
+                      timeRange === '1Y'
+                        ? 'bg-indigo-600 text-white'
+                        : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
+                    }`}
+                  >
+                    1Y
+                  </button>
+                  <button
+                    onClick={() => setTimeRange('5Y')}
+                    className={`px-3 py-1 rounded-md text-sm font-medium ${
+                      timeRange === '5Y'
+                        ? 'bg-indigo-600 text-white'
+                        : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
+                    }`}
+                  >
+                    5Y
+                  </button>
+                </div>
+              </div>
               {watchlist.length > 0 && selectedStocks.length > 0 ? (
                 <div className="h-[500px]">
                   <Line
