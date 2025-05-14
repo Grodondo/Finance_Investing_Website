@@ -15,7 +15,7 @@ import {
   ChartOptions,
   Filler,
 } from "chart.js";
-import { DragDropContext, Droppable, Draggable, DropResult, DroppableProvided, DraggableProvided } from "react-beautiful-dnd";
+import { DragDropContext, Droppable, Draggable } from "react-beautiful-dnd";
 import { 
   Bars3BottomLeftIcon, 
   ArrowTrendingUpIcon, 
@@ -102,6 +102,12 @@ interface DashboardData {
   watchlist: WatchlistStock[] | undefined;
   transactions: Transaction[] | undefined;
   insights: FinancialInsights | undefined;
+}
+
+interface DashboardItem {
+  id: string;
+  sectionId: SectionId;
+  isFullWidth: boolean;
 }
 
 const useTransactions = (authHeader: AuthHeader) => {
@@ -358,20 +364,278 @@ const getWatchlistChartOptions = (): ChartOptions<"line"> => ({
   }
 });
 
+// Dashboard section component
+const DashboardSection = ({ sectionId, transactions, insights, watchlist, selectedStocks, setSelectedStocks, chartOptions, watchlistChartOptions, transactionsChartData, watchlistChartData }: any) => {
+  return (
+    <div className="p-6">
+      {sectionId === "portfolio-summary" && (
+        <div className="space-y-6">
+          <div className="h-80">
+            <Line data={transactionsChartData} options={chartOptions} />
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div className="bg-green-50 dark:bg-green-900/20 p-4 rounded-lg">
+              <h3 className="text-sm font-medium text-green-800 dark:text-green-200">Total Income</h3>
+              <p className="mt-1 text-2xl font-semibold text-green-900 dark:text-green-100">
+                ${insights?.total_income.toFixed(2) || "0.00"}
+              </p>
+            </div>
+            <div className="bg-red-50 dark:bg-red-900/20 p-4 rounded-lg">
+              <h3 className="text-sm font-medium text-red-800 dark:text-red-200">Total Expenses</h3>
+              <p className="mt-1 text-2xl font-semibold text-red-900 dark:text-red-100">
+                ${insights?.total_expenses.toFixed(2) || "0.00"}
+              </p>
+            </div>
+            <div className={`p-4 rounded-lg ${
+              (insights?.net_balance || 0) >= 0 
+                ? "bg-green-50 dark:bg-green-900/20" 
+                : "bg-red-50 dark:bg-red-900/20"
+            }`}>
+              <h3 className={`text-sm font-medium ${
+                (insights?.net_balance || 0) >= 0 
+                  ? "text-green-800 dark:text-green-200" 
+                  : "text-red-800 dark:text-red-200"
+              }`}>
+                Net Balance
+              </h3>
+              <p className={`mt-1 text-2xl font-semibold ${
+                (insights?.net_balance || 0) >= 0 
+                  ? "text-green-900 dark:text-green-100" 
+                  : "text-red-900 dark:text-red-100"
+              }`}>
+                ${insights?.net_balance?.toFixed(2) || "0.00"}
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+      {sectionId === "market-overview" && (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          <div className="bg-gray-50 dark:bg-gray-700 p-4 rounded-lg">
+            <h3 className="text-sm font-medium text-gray-900 dark:text-white">S&P 500</h3>
+            <div className="mt-2 flex items-center justify-between">
+              <p className="text-lg font-semibold text-gray-900 dark:text-white">4,783.45</p>
+              <span className="text-sm text-green-600">+1.2%</span>
+            </div>
+          </div>
+        </div>
+      )}
+      {sectionId === "watchlist" && (
+        <div className="space-y-6">
+          {watchlist && watchlist.length > 0 ? (
+            <>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                {watchlist.map((stock: any, index: number) => (
+                  <div 
+                    key={stock.id} 
+                    className="bg-gray-50 dark:bg-gray-700 rounded-lg p-4 shadow-sm hover:shadow-md transition-shadow"
+                  >
+                    <div className="flex items-center space-x-2 mb-2">
+                      <div 
+                        className="w-3 h-3 rounded-full" 
+                        style={{ backgroundColor: COLORS[index % COLORS.length] }}
+                      />
+                      <input
+                        type="checkbox"
+                        checked={selectedStocks.includes(stock.symbol)}
+                        onChange={() => setSelectedStocks((prev: string[]) =>
+                          prev.includes(stock.symbol) 
+                            ? prev.filter((s: string) => s !== stock.symbol) 
+                            : [...prev, stock.symbol]
+                        )}
+                        className="cursor-pointer"
+                      />
+                      <div className="flex-1">
+                        <p className="text-sm font-medium text-gray-900 dark:text-white">
+                          {stock.symbol}
+                        </p>
+                        <p className="text-xs text-gray-500 dark:text-gray-400">
+                          {stock.name}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <p className="text-sm font-medium text-gray-900 dark:text-white">
+                        ${stock.currentPrice.toFixed(2)}
+                      </p>
+                      <p className={`text-xs ${
+                        stock.change >= 0 
+                          ? 'text-green-600 dark:text-green-400' 
+                          : 'text-red-600 dark:text-red-400'
+                      }`}>
+                        {stock.change >= 0 ? '+' : ''}
+                        {stock.change.toFixed(2)} ({stock.changePercent.toFixed(2)}%)
+                      </p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <div className="h-[400px] bg-gray-50 dark:bg-gray-700 rounded-lg p-4">
+                <Line
+                  data={watchlistChartData}
+                  options={watchlistChartOptions}
+                />
+              </div>
+            </>
+          ) : (
+            <div className="text-center py-8">
+              <StarIcon className="mx-auto h-12 w-12 text-gray-400 dark:text-gray-500" />
+              <p className="mt-2 text-gray-500 dark:text-gray-400">
+                No stocks in your watchlist. Add stocks from the recommendations page.
+              </p>
+            </div>
+          )}
+        </div>
+      )}
+      {sectionId === "recent-transactions" && (
+        <div className="space-y-4">
+          {transactions && transactions.length === 0 ? (
+            <div className="text-center text-gray-500 py-8">No transactions found.</div>
+          ) : (
+            transactions?.slice(0, 5).map((transaction: any) => (
+              <div
+                key={transaction.id}
+                className="flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-700 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-600 transition-colors"
+              >
+                <div className="flex items-center space-x-4">
+                  <div className={`p-2 rounded-full ${
+                    transaction.type === "income" 
+                      ? "bg-green-100 dark:bg-green-900/20" 
+                      : "bg-red-100 dark:bg-red-900/20"
+                  }`}>
+                    {transaction.type === "income" ? (
+                      <ArrowTrendingUpIcon className="h-5 w-5 text-green-600 dark:text-green-400" />
+                    ) : (
+                      <ArrowTrendingDownIcon className="h-5 w-5 text-red-600 dark:text-red-400" />
+                    )}
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium text-gray-900 dark:text-white">
+                      {transaction.description}
+                    </p>
+                    <p className="text-xs text-gray-500">
+                      {new Date(transaction.date).toLocaleDateString()}
+                    </p>
+                  </div>
+                </div>
+                <p className={`text-sm font-medium ${
+                  transaction.type === "income" 
+                    ? "text-green-600 dark:text-green-400" 
+                    : "text-red-600 dark:text-red-400"
+                }`}>
+                  {transaction.type === "income" ? "+" : "-"}${Math.abs(transaction.amount).toFixed(2)}
+                </p>
+              </div>
+            ))
+          )}
+        </div>
+      )}
+      {sectionId === "financial-insights" && (
+        <div>
+          {insights ? (
+            <div className="space-y-6">
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+                <div className="bg-green-50 p-4 rounded-lg">
+                  <h3 className="text-sm font-medium text-green-800">Total Income</h3>
+                  <p className="mt-1 text-2xl font-semibold text-green-900">
+                    ${insights.total_income.toFixed(2)}
+                  </p>
+                </div>
+                <div className="bg-red-50 p-4 rounded-lg">
+                  <h3 className="text-sm font-medium text-red-800">Total Expenses</h3>
+                  <p className="mt-1 text-2xl font-semibold text-red-900">
+                    ${insights.total_expenses.toFixed(2)}
+                  </p>
+                </div>
+                <div className={`p-4 rounded-lg ${insights.net_balance >= 0 ? "bg-green-50" : "bg-red-50"}`}>
+                  <h3 className={`text-sm font-medium ${insights.net_balance >= 0 ? "text-green-800" : "text-red-800"}`}>
+                    Net Balance
+                  </h3>
+                  <p className={`mt-1 text-2xl font-semibold ${insights.net_balance >= 0 ? "text-green-900" : "text-red-900"}`}>
+                    ${insights.net_balance.toFixed(2)}
+                  </p>
+                </div>
+              </div>
+              <div>
+                <h3 className="text-sm font-medium text-gray-900 mb-3">Top Expense Categories</h3>
+                <div className="space-y-3">
+                  {insights.top_expense_categories.map((category: CategoryInsight) => (
+                    <div
+                      key={category.category_id}
+                      className="flex items-center justify-between p-3 bg-gray-50 rounded-lg"
+                    >
+                      <div>
+                        <p className="text-sm font-medium text-gray-900">{category.category_name}</p>
+                        <p className="text-xs text-gray-500">{category.transaction_count} transactions</p>
+                      </div>
+                      <p className="text-sm font-medium text-red-600">${category.total_amount.toFixed(2)}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <h3 className="text-sm font-medium text-gray-900 mb-3">Monthly Trends</h3>
+                <div className="space-y-3">
+                  {insights.monthly_trends.map((trend: MonthlyInsight) => (
+                    <div key={trend.month} className="p-3 bg-gray-50 rounded-lg">
+                      <div className="flex items-center justify-between mb-2">
+                        <p className="text-sm font-medium text-gray-900">
+                          {new Date(trend.month).toLocaleDateString("en-US", { year: "numeric", month: "long" })}
+                        </p>
+                        <p className={`text-sm font-medium ${trend.balance >= 0 ? "text-green-600" : "text-red-600"}`}>
+                          ${trend.balance.toFixed(2)}
+                        </p>
+                      </div>
+                      <div className="grid grid-cols-2 gap-2 text-xs">
+                        <div>
+                          <p className="text-gray-500">Income</p>
+                          <p className="text-green-600">${trend.income.toFixed(2)}</p>
+                        </div>
+                        <div>
+                          <p className="text-gray-500">Expenses</p>
+                          <p className="text-red-600">${trend.expenses.toFixed(2)}</p>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          ) : (
+            <p className="text-gray-500 text-sm">No insights available yet.</p>
+          )}
+        </div>
+      )}
+      {sectionId === "price-alerts" && (
+        <div className="space-y-4">
+          <div className="text-center text-gray-500 py-8">
+            Set up price alerts to monitor your favorite stocks
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
 export default function Dashboard() {
   const { user, logout, getAuthHeader, isAuthenticated } = useAuth();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [selectedStocks, setSelectedStocks] = useState<string[]>([]);
-  const [sectionOrder, setSectionOrder] = useState<SectionId[]>([
-    "portfolio-summary",
-    "market-overview",
-    "watchlist",
-    "recent-transactions",
-    "financial-insights",
-    "price-alerts"
-  ]);
   const [isCompact, setIsCompact] = useState(false);
+
+  // Initial dashboard items
+  const [dashboardItems, setDashboardItems] = useState<DashboardItem[]>([
+    { id: "item-portfolio-summary", sectionId: "portfolio-summary", isFullWidth: true },
+    { id: "item-market-overview", sectionId: "market-overview", isFullWidth: true },
+    { id: "item-watchlist", sectionId: "watchlist", isFullWidth: false },
+    { id: "item-recent-transactions", sectionId: "recent-transactions", isFullWidth: false },
+    { id: "item-financial-insights", sectionId: "financial-insights", isFullWidth: false },
+    { id: "item-price-alerts", sectionId: "price-alerts", isFullWidth: false }
+  ]);
+
+  // Drag state
+  const [draggedItem, setDraggedItem] = useState<number | null>(null);
 
   const authHeader = useMemo(() => getAuthHeader() as AuthHeader, [getAuthHeader]);
 
@@ -406,13 +670,32 @@ export default function Dashboard() {
   const chartOptions = useMemo(() => getChartOptions(), []);
   const watchlistChartOptions = useMemo(() => getWatchlistChartOptions(), []);
 
-  const onDragEnd = useCallback((result: DropResult) => {
-    if (!result.destination) return;
-    const items = Array.from(sectionOrder);
-    const [reorderedItem] = items.splice(result.source.index, 1);
-    items.splice(result.destination.index, 0, reorderedItem);
-    setSectionOrder(items as SectionId[]);
-  }, [sectionOrder]);
+  // HTML5 Drag and Drop functions
+  const handleDragStart = (index: number) => {
+    setDraggedItem(index);
+  };
+
+  const handleDragOver = (e: React.DragEvent, index: number) => {
+    e.preventDefault();
+    
+    if (draggedItem === null) return;
+    if (draggedItem === index) return;
+
+    const newItems = [...dashboardItems];
+    const draggedItemContent = newItems[draggedItem];
+    
+    // Remove the dragged item
+    newItems.splice(draggedItem, 1);
+    // Add it at the new position
+    newItems.splice(index, 0, draggedItemContent);
+    
+    setDashboardItems(newItems);
+    setDraggedItem(index);
+  };
+
+  const handleDragEnd = () => {
+    setDraggedItem(null);
+  };
 
   useEffect(() => {
     const handleResize = () => {
@@ -460,6 +743,23 @@ export default function Dashboard() {
       </div>
     </div>
   );
+
+  const getSectionTitle = (sectionId: SectionId) => {
+    return {
+      "portfolio-summary": "Portfolio Summary",
+      "market-overview": "Market Overview",
+      "watchlist": "Watchlist",
+      "recent-transactions": "Recent Transactions",
+      "financial-insights": "Financial Insights",
+      "price-alerts": "Price Alerts"
+    }[sectionId];
+  };
+
+  // Instead of using react-beautiful-dnd, let's create a basic draggable layout
+  const getGridColumnClass = (item: DashboardItem) => {
+    if (isCompact) return "";
+    return item.isFullWidth ? "col-span-2" : "";
+  };
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
@@ -510,301 +810,42 @@ export default function Dashboard() {
       </header>
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <DragDropContext onDragEnd={onDragEnd}>
-          <Droppable droppableId="dashboard-sections" direction={isCompact ? "vertical" : "horizontal"}>
-            {(provided: DroppableProvided) => (
-              <div 
-                {...provided.droppableProps} 
-                ref={provided.innerRef} 
-                className={`grid gap-6 ${isCompact ? 'grid-cols-1' : 'grid-cols-1 lg:grid-cols-2'}`}
-              >
-                {sectionOrder.map((sectionId, index) => (
-                  <Draggable key={sectionId} draggableId={sectionId} index={index}>
-                    {(provided: DraggableProvided) => (
-                      <div
-                        ref={provided.innerRef}
-                        {...provided.draggableProps}
-                        className={`bg-white dark:bg-gray-800 rounded-lg shadow-sm ${
-                          sectionId === "portfolio-summary" || sectionId === "market-overview" 
-                            ? "lg:col-span-2" 
-                            : ""
-                        }`}
-                      >
-                        <div
-                          className="flex items-center justify-between p-4 border-b border-gray-200 dark:border-gray-700"
-                          {...provided.dragHandleProps}
-                        >
-                          <h2 className="text-lg font-medium text-gray-900 dark:text-white">
-                            {sectionId === "portfolio-summary" 
-                              ? "Portfolio Summary" 
-                              : sectionId === "market-overview"
-                              ? "Market Overview"
-                              : sectionId === "watchlist"
-                              ? "Watchlist"
-                              : sectionId === "recent-transactions"
-                              ? "Recent Transactions"
-                              : sectionId === "financial-insights"
-                              ? "Financial Insights"
-                              : "Price Alerts"}
-                          </h2>
-                          <Bars3BottomLeftIcon className="h-5 w-5 text-gray-400 dark:text-gray-500" />
-                        </div>
-                        <div className="p-6">
-                          {sectionId === "portfolio-summary" && (
-                            <div className="space-y-6">
-                              <div className="h-80">
-                                <Line data={transactionsChartData} options={chartOptions} />
-                              </div>
-                              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                                <div className="bg-green-50 dark:bg-green-900/20 p-4 rounded-lg">
-                                  <h3 className="text-sm font-medium text-green-800 dark:text-green-200">Total Income</h3>
-                                  <p className="mt-1 text-2xl font-semibold text-green-900 dark:text-green-100">
-                                    ${insights?.total_income.toFixed(2) || "0.00"}
-                                  </p>
-                                </div>
-                                <div className="bg-red-50 dark:bg-red-900/20 p-4 rounded-lg">
-                                  <h3 className="text-sm font-medium text-red-800 dark:text-red-200">Total Expenses</h3>
-                                  <p className="mt-1 text-2xl font-semibold text-red-900 dark:text-red-100">
-                                    ${insights?.total_expenses.toFixed(2) || "0.00"}
-                                  </p>
-                                </div>
-                                <div className={`p-4 rounded-lg ${
-                                  (insights?.net_balance || 0) >= 0 
-                                    ? "bg-green-50 dark:bg-green-900/20" 
-                                    : "bg-red-50 dark:bg-red-900/20"
-                                }`}>
-                                  <h3 className={`text-sm font-medium ${
-                                    (insights?.net_balance || 0) >= 0 
-                                      ? "text-green-800 dark:text-green-200" 
-                                      : "text-red-800 dark:text-red-200"
-                                  }`}>
-                                    Net Balance
-                                  </h3>
-                                  <p className={`mt-1 text-2xl font-semibold ${
-                                    (insights?.net_balance || 0) >= 0 
-                                      ? "text-green-900 dark:text-green-100" 
-                                      : "text-red-900 dark:text-red-100"
-                                  }`}>
-                                    ${insights?.net_balance.toFixed(2) || "0.00"}
-                                  </p>
-                                </div>
-                              </div>
-                            </div>
-                          )}
-                          {sectionId === "market-overview" && (
-                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                              <div className="bg-gray-50 dark:bg-gray-700 p-4 rounded-lg">
-                                <h3 className="text-sm font-medium text-gray-900 dark:text-white">S&P 500</h3>
-                                <div className="mt-2 flex items-center justify-between">
-                                  <p className="text-lg font-semibold text-gray-900 dark:text-white">4,783.45</p>
-                                  <span className="text-sm text-green-600">+1.2%</span>
-                                </div>
-                              </div>
-                            </div>
-                          )}
-                          {sectionId === "watchlist" && (
-                            <div className="space-y-6">
-                              {watchlist.length > 0 ? (
-                                <>
-                                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                                    {watchlist.map((stock, index) => (
-                                      <div 
-                                        key={stock.id} 
-                                        className="bg-gray-50 dark:bg-gray-700 rounded-lg p-4 shadow-sm hover:shadow-md transition-shadow"
-                                      >
-                                        <div className="flex items-center space-x-2 mb-2">
-                                          <div 
-                                            className="w-3 h-3 rounded-full" 
-                                            style={{ backgroundColor: COLORS[index % COLORS.length] }}
-                                          />
-                                          <input
-                                            type="checkbox"
-                                            checked={selectedStocks.includes(stock.symbol)}
-                                            onChange={() => setSelectedStocks(prev =>
-                                              prev.includes(stock.symbol) 
-                                                ? prev.filter(s => s !== stock.symbol) 
-                                                : [...prev, stock.symbol]
-                                            )}
-                                            className="cursor-pointer"
-                                          />
-                                          <div className="flex-1">
-                                            <p className="text-sm font-medium text-gray-900 dark:text-white">
-                                              {stock.symbol}
-                                            </p>
-                                            <p className="text-xs text-gray-500 dark:text-gray-400">
-                                              {stock.name}
-                                            </p>
-                                          </div>
-                                        </div>
-                                        <div className="flex justify-between items-center">
-                                          <p className="text-sm font-medium text-gray-900 dark:text-white">
-                                            ${stock.currentPrice.toFixed(2)}
-                                          </p>
-                                          <p className={`text-xs ${
-                                            stock.change >= 0 
-                                              ? 'text-green-600 dark:text-green-400' 
-                                              : 'text-red-600 dark:text-red-400'
-                                          }`}>
-                                            {stock.change >= 0 ? '+' : ''}
-                                            {stock.change.toFixed(2)} ({stock.changePercent.toFixed(2)}%)
-                                          </p>
-                                        </div>
-                                      </div>
-                                    ))}
-                                  </div>
-                                  <div className="h-[400px] bg-gray-50 dark:bg-gray-700 rounded-lg p-4">
-                                    <Line
-                                      data={watchlistChartData}
-                                      options={watchlistChartOptions}
-                                    />
-                                  </div>
-                                </>
-                              ) : (
-                                <div className="text-center py-8">
-                                  <StarIcon className="mx-auto h-12 w-12 text-gray-400 dark:text-gray-500" />
-                                  <p className="mt-2 text-gray-500 dark:text-gray-400">
-                                    No stocks in your watchlist. Add stocks from the recommendations page.
-                                  </p>
-                                </div>
-                              )}
-                            </div>
-                          )}
-                          {sectionId === "recent-transactions" && (
-                            <div className="space-y-4">
-                              {transactions.length === 0 ? (
-                                <div className="text-center text-gray-500 py-8">No transactions found.</div>
-                              ) : (
-                                transactions.slice(0, 5).map((transaction) => (
-                                  <div
-                                    key={transaction.id}
-                                    className="flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-700 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-600 transition-colors"
-                                  >
-                                    <div className="flex items-center space-x-4">
-                                      <div className={`p-2 rounded-full ${
-                                        transaction.type === "income" 
-                                          ? "bg-green-100 dark:bg-green-900/20" 
-                                          : "bg-red-100 dark:bg-red-900/20"
-                                      }`}>
-                                        {transaction.type === "income" ? (
-                                          <ArrowTrendingUpIcon className="h-5 w-5 text-green-600 dark:text-green-400" />
-                                        ) : (
-                                          <ArrowTrendingDownIcon className="h-5 w-5 text-red-600 dark:text-red-400" />
-                                        )}
-                                      </div>
-                                      <div>
-                                        <p className="text-sm font-medium text-gray-900 dark:text-white">
-                                          {transaction.description}
-                                        </p>
-                                        <p className="text-xs text-gray-500">
-                                          {new Date(transaction.date).toLocaleDateString()}
-                                        </p>
-                                      </div>
-                                    </div>
-                                    <p className={`text-sm font-medium ${
-                                      transaction.type === "income" 
-                                        ? "text-green-600 dark:text-green-400" 
-                                        : "text-red-600 dark:text-red-400"
-                                    }`}>
-                                      {transaction.type === "income" ? "+" : "-"}${Math.abs(transaction.amount).toFixed(2)}
-                                    </p>
-                                  </div>
-                                ))
-                              )}
-                            </div>
-                          )}
-                          {sectionId === "financial-insights" && (
-                            <div>
-                              {insights ? (
-                                <div className="space-y-6">
-                                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-                                    <div className="bg-green-50 p-4 rounded-lg">
-                                      <h3 className="text-sm font-medium text-green-800">Total Income</h3>
-                                      <p className="mt-1 text-2xl font-semibold text-green-900">
-                                        ${insights.total_income.toFixed(2)}
-                                      </p>
-                                    </div>
-                                    <div className="bg-red-50 p-4 rounded-lg">
-                                      <h3 className="text-sm font-medium text-red-800">Total Expenses</h3>
-                                      <p className="mt-1 text-2xl font-semibold text-red-900">
-                                        ${insights.total_expenses.toFixed(2)}
-                                      </p>
-                                    </div>
-                                    <div className={`p-4 rounded-lg ${insights.net_balance >= 0 ? "bg-green-50" : "bg-red-50"}`}>
-                                      <h3 className={`text-sm font-medium ${insights.net_balance >= 0 ? "text-green-800" : "text-red-800"}`}>
-                                        Net Balance
-                                      </h3>
-                                      <p className={`mt-1 text-2xl font-semibold ${insights.net_balance >= 0 ? "text-green-900" : "text-red-900"}`}>
-                                        ${insights.net_balance.toFixed(2)}
-                                      </p>
-                                    </div>
-                                  </div>
-                                  <div>
-                                    <h3 className="text-sm font-medium text-gray-900 mb-3">Top Expense Categories</h3>
-                                    <div className="space-y-3">
-                                      {insights.top_expense_categories.map((category) => (
-                                        <div
-                                          key={category.category_id}
-                                          className="flex items-center justify-between p-3 bg-gray-50 rounded-lg"
-                                        >
-                                          <div>
-                                            <p className="text-sm font-medium text-gray-900">{category.category_name}</p>
-                                            <p className="text-xs text-gray-500">{category.transaction_count} transactions</p>
-                                          </div>
-                                          <p className="text-sm font-medium text-red-600">${category.total_amount.toFixed(2)}</p>
-                                        </div>
-                                      ))}
-                                    </div>
-                                  </div>
-                                  <div>
-                                    <h3 className="text-sm font-medium text-gray-900 mb-3">Monthly Trends</h3>
-                                    <div className="space-y-3">
-                                      {insights.monthly_trends.map((trend) => (
-                                        <div key={trend.month} className="p-3 bg-gray-50 rounded-lg">
-                                          <div className="flex items-center justify-between mb-2">
-                                            <p className="text-sm font-medium text-gray-900">
-                                              {new Date(trend.month).toLocaleDateString("en-US", { year: "numeric", month: "long" })}
-                                            </p>
-                                            <p className={`text-sm font-medium ${trend.balance >= 0 ? "text-green-600" : "text-red-600"}`}>
-                                              ${trend.balance.toFixed(2)}
-                                            </p>
-                                          </div>
-                                          <div className="grid grid-cols-2 gap-2 text-xs">
-                                            <div>
-                                              <p className="text-gray-500">Income</p>
-                                              <p className="text-green-600">${trend.income.toFixed(2)}</p>
-                                            </div>
-                                            <div>
-                                              <p className="text-gray-500">Expenses</p>
-                                              <p className="text-red-600">${trend.expenses.toFixed(2)}</p>
-                                            </div>
-                                          </div>
-                                        </div>
-                                      ))}
-                                    </div>
-                                  </div>
-                                </div>
-                              ) : (
-                                <p className="text-gray-500 text-sm">No insights available yet.</p>
-                              )}
-                            </div>
-                          )}
-                          {sectionId === "price-alerts" && (
-                            <div className="space-y-4">
-                              <div className="text-center text-gray-500 py-8">
-                                Set up price alerts to monitor your favorite stocks
-                              </div>
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    )}
-                  </Draggable>
-                ))}
-                {provided.placeholder}
+        <div className={`grid gap-6 ${isCompact ? 'grid-cols-1' : 'grid-cols-2'}`}>
+          {dashboardItems.map((item, index) => (
+            <div
+              key={item.id}
+              draggable
+              onDragStart={() => handleDragStart(index)}
+              onDragOver={(e) => handleDragOver(e, index)}
+              onDragEnd={handleDragEnd}
+              className={`bg-white dark:bg-gray-800 rounded-lg shadow-sm ${getGridColumnClass(item)} ${
+                draggedItem === index ? 'border-2 border-indigo-500 opacity-70' : ''
+              }`}
+            >
+              <div className="flex items-center justify-between p-4 border-b border-gray-200 dark:border-gray-700 cursor-move">
+                <h2 className="text-lg font-medium text-gray-900 dark:text-white">
+                  {getSectionTitle(item.sectionId)}
+                </h2>
+                <div className="flex items-center space-x-2">
+                  <span className="text-xs text-gray-500 dark:text-gray-400">Drag to reorder</span>
+                  <Bars3BottomLeftIcon className="h-5 w-5 text-gray-400 dark:text-gray-500 cursor-move" />
+                </div>
               </div>
-            )}
-          </Droppable>
-        </DragDropContext>
+              <DashboardSection 
+                sectionId={item.sectionId}
+                transactions={transactions}
+                insights={insights}
+                watchlist={watchlist}
+                selectedStocks={selectedStocks}
+                setSelectedStocks={setSelectedStocks}
+                chartOptions={chartOptions}
+                watchlistChartOptions={watchlistChartOptions}
+                transactionsChartData={transactionsChartData}
+                watchlistChartData={watchlistChartData}
+              />
+            </div>
+          ))}
+        </div>
       </main>
     </div>
   );
