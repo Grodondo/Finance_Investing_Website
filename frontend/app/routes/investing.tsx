@@ -60,6 +60,33 @@ interface Portfolio {
   }[];
 }
 
+interface WatchlistResponse {
+  id: number;
+  symbol: string;
+  name: string;
+  current_price: number;
+  change: number;
+  change_percent: number;
+  volume: number;
+  market_cap: number;
+  shares_owned: number;
+  total_value: number;
+}
+
+interface StockResponse {
+  symbol: string;
+  name: string;
+  current_price: number;
+  change: number;
+  change_percent: number;
+  volume: number;
+  market_cap: number;
+  historical_data?: {
+    date: string;
+    price: number;
+  }[];
+}
+
 interface Watchlist {
   id: number;
   symbol: string;
@@ -71,6 +98,11 @@ interface Watchlist {
   marketCap: number;
   sharesOwned: number;
   totalValue: number;
+  historicalData: {
+    date: string;
+    price: number;
+    is_intraday: boolean;
+  }[];
 }
 
 interface SearchResult {
@@ -121,19 +153,72 @@ const useStockData = (symbol: string | null, authHeader: AuthHeader) => {
   });
 };
 
-const useWatchlist = (authHeader: AuthHeader) => {
+const useWatchlistWithHistory = (authHeader: AuthHeader) => {
   return useQuery({
-    queryKey: ['watchlist'],
+    queryKey: ['watchlistWithHistory'],
     queryFn: async () => {
       if (!authHeader) return [];
-      const response = await fetch("/api/watchlist", {
+      
+      // Fetch watchlist
+      const watchlistResponse = await fetch("/api/watchlist", {
         headers: {
           ...authHeader,
           "Content-Type": "application/json"
         }
       });
-      if (!response.ok) throw new Error("Failed to fetch watchlist");
-      return response.json() as Promise<Watchlist[]>;
+      
+      if (!watchlistResponse.ok) throw new Error("Failed to fetch watchlist");
+      const watchlistData = await watchlistResponse.json() as WatchlistResponse[];
+      
+      // Normalize watchlist data
+      const normalizedWatchlist = watchlistData.map((stock: WatchlistResponse): Watchlist => ({
+        id: stock.id,
+        symbol: stock.symbol,
+        name: stock.name,
+        currentPrice: stock.current_price || 0,
+        change: stock.change || 0,
+        changePercent: stock.change_percent || 0,
+        volume: stock.volume || 0,
+        marketCap: stock.market_cap || 0,
+        sharesOwned: stock.shares_owned || 0,
+        totalValue: stock.total_value || 0,
+        historicalData: []
+      }));
+
+      // Fetch historical data for each stock in parallel
+      const watchlistWithHistory = await Promise.all(
+        normalizedWatchlist.map(async (stock: Watchlist): Promise<Watchlist> => {
+          try {
+            const response = await fetch(`/api/stocks/${stock.symbol}`, {
+              headers: {
+                ...authHeader,
+                "Content-Type": "application/json"
+              }
+            });
+            if (response.ok) {
+              const stockData = await response.json() as StockResponse;
+              return {
+                ...stock,
+                currentPrice: stockData.current_price || stock.currentPrice,
+                change: stockData.change || stock.change,
+                changePercent: stockData.change_percent || stock.changePercent,
+                volume: stockData.volume || stock.volume,
+                marketCap: stockData.market_cap || stock.marketCap,
+                historicalData: stockData.historical_data?.map((point: { date: string; price: number }) => ({
+                  date: point.date,
+                  price: point.price,
+                  is_intraday: point.date.includes(' ')
+                })) || []
+              };
+            }
+            return stock;
+          } catch {
+            return stock;
+          }
+        })
+      );
+
+      return watchlistWithHistory;
     },
     enabled: !!authHeader,
     staleTime: 30000,
@@ -277,7 +362,7 @@ export default function Investing() {
 
   // Use React Query hooks with proper types
   const { data: portfolio, isLoading: isPortfolioLoading, error: portfolioError } = usePortfolio(authHeader);
-  const { data: watchlist, isLoading: isWatchlistLoading, error: watchlistError } = useWatchlist(authHeader);
+  const { data: watchlist, isLoading: isWatchlistLoading, error: watchlistError } = useWatchlistWithHistory(authHeader);
   const { 
     data: selectedStock, 
     isLoading: isStockLoading, 
@@ -910,7 +995,7 @@ export default function Investing() {
 
                 {stockError && (
                   <div className="mt-4 p-4 bg-yellow-50 dark:bg-yellow-900/20 rounded-lg">
-                    <p className="text-sm text-yellow-700 dark:text-yellow-300">{stockError}</p>
+                    <p className="text-sm text-yellow-700 dark:text-yellow-300">{stockError.message}</p>
                   </div>
                 )}
                 {isStockLoading && (
@@ -1046,7 +1131,7 @@ export default function Investing() {
                         </div>
                         {stock.sharesOwned > 0 && (
                           <div className="mt-2 text-xs text-gray-500 dark:text-gray-400">
-                            <p>Owned: {stock.sharesOwned.toFixed(2)} shares (${stock.totalValue.toFixed(2)})</p>
+                            <p>Owned: {stock.sharesOwned.toFixed(2)} shares (${(stock.sharesOwned * stock.currentPrice).toFixed(2)})</p>
                           </div>
                         )}
                         <div className="mt-1 grid grid-cols-2 gap-2 text-xs text-gray-500 dark:text-gray-400">
