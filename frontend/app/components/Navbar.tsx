@@ -3,12 +3,35 @@ import { useAuth } from "../contexts/AuthContext";
 import { useState, useEffect } from "react";
 import { Bars3Icon, XMarkIcon, UserCircleIcon } from "@heroicons/react/24/outline";
 
+// Helper to get the saved profile picture from localStorage
+const getSavedProfilePicture = (): string | null => {
+  try {
+    return localStorage.getItem('userProfilePicture');
+  } catch (error) {
+    console.error('Error getting profile picture from localStorage:', error);
+    return null;
+  }
+};
+
+// Helper to get the saved user data from localStorage
+const getSavedUserData = () => {
+  try {
+    const userData = localStorage.getItem('userData');
+    return userData ? JSON.parse(userData) : null;
+  } catch (error) {
+    console.error('Error getting user data from localStorage:', error);
+    return null;
+  }
+};
+
 export default function Navbar() {
   const { user, logout } = useAuth();
   const location = useLocation();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isScrolled, setIsScrolled] = useState(false);
   const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false);
+  const [profilePicture, setProfilePicture] = useState<string | null>(null);
+  const [userName, setUserName] = useState<string>("");
 
   // Handle scroll effect
   useEffect(() => {
@@ -18,6 +41,25 @@ export default function Navbar() {
     window.addEventListener('scroll', handleScroll);
     return () => window.removeEventListener('scroll', handleScroll);
   }, []);
+
+  // Get profile picture and user name from localStorage or context
+  useEffect(() => {
+    // Check localStorage first for profile picture
+    const savedProfilePicture = getSavedProfilePicture();
+    if (savedProfilePicture) {
+      setProfilePicture(savedProfilePicture);
+    } else if (user?.profilePicture) {
+      setProfilePicture(user.profilePicture);
+    }
+
+    // Check localStorage first for user name
+    const savedUserData = getSavedUserData();
+    if (savedUserData?.name) {
+      setUserName(savedUserData.name);
+    } else if (user?.name) {
+      setUserName(user.name);
+    }
+  }, [user]);
 
   // Close mobile menu when route changes
   useEffect(() => {
@@ -130,7 +172,7 @@ export default function Navbar() {
             {user && (
               <div className="flex items-center space-x-4">
                 <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                  Welcome, {user.name}
+                  Welcome, {userName || user.name || "User"}
                 </span>
                 <div className="relative">
                   <button 
@@ -139,10 +181,10 @@ export default function Navbar() {
                     onClick={() => setIsProfileMenuOpen(!isProfileMenuOpen)}
                   >
                     <div className="h-8 w-8 rounded-full bg-indigo-100 dark:bg-indigo-900 overflow-hidden">
-                      {user.profilePicture ? (
+                      {profilePicture ? (
                         <img 
-                          src={user.profilePicture} 
-                          alt={user.name} 
+                          src={profilePicture} 
+                          alt={userName || user.name || "User"} 
                           className="h-full w-full object-cover"
                         />
                       ) : (
@@ -202,10 +244,10 @@ export default function Navbar() {
               <div className="flex items-center px-4 py-2">
                 <div className="flex-shrink-0 mr-3">
                   <div className="h-10 w-10 rounded-full bg-indigo-100 dark:bg-indigo-900 overflow-hidden">
-                    {user.profilePicture ? (
+                    {profilePicture ? (
                       <img 
-                        src={user.profilePicture} 
-                        alt={user.name} 
+                        src={profilePicture} 
+                        alt={userName || user.name || "User"} 
                         className="h-full w-full object-cover"
                       />
                     ) : (
@@ -215,7 +257,7 @@ export default function Navbar() {
                 </div>
                 <div>
                   <p className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                    {user.name}
+                    {userName || user.name || "User"}
                   </p>
                   <p className="text-xs text-gray-500 dark:text-gray-400">
                     {user.email}

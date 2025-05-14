@@ -95,6 +95,98 @@ const CARD_ICONS = {
   )
 };
 
+// Secure card storage helper functions
+const secureCardStorage = {
+  // In a real application, these functions would use proper encryption
+  // and communicate with a backend API to store data securely
+  
+  // This encrypts the card number, keeping only the last 4 digits in plain text
+  // In production: Use a proper encryption library on the backend
+  encryptCard: (card: CreditCard): Partial<CreditCard> => {
+    // In a real app, this would use proper encryption
+    // Here we're just simulating by masking the card number
+    const last4 = card.cardNumber.slice(-4);
+    return {
+      id: card.id,
+      cardholderName: card.cardholderName,
+      // Store only masked data in localStorage (just for simulation)
+      cardNumber: `xxxxxxxxxxxx${last4}`,
+      expiryDate: card.expiryDate,
+      type: card.type
+      // Note: CVV is never stored, even in encrypted form
+    };
+  },
+  
+  // Load cards from localStorage (in a real app, this would fetch from API)
+  loadCards: (): Partial<CreditCard>[] => {
+    try {
+      const storedCards = localStorage.getItem('userCreditCards');
+      return storedCards ? JSON.parse(storedCards) : [];
+    } catch (error) {
+      console.error('Error loading cards from storage:', error);
+      return [];
+    }
+  },
+  
+  // Save cards to localStorage (in a real app, this would send to API)
+  saveCards: (cards: Partial<CreditCard>[]) => {
+    try {
+      localStorage.setItem('userCreditCards', JSON.stringify(cards));
+    } catch (error) {
+      console.error('Error saving cards to storage:', error);
+    }
+  },
+  
+  // Add a new card
+  addCard: (card: CreditCard) => {
+    const cards = secureCardStorage.loadCards();
+    const secureCard = secureCardStorage.encryptCard(card);
+    cards.push(secureCard);
+    secureCardStorage.saveCards(cards);
+  },
+  
+  // Remove a card by ID
+  removeCard: (cardId: string) => {
+    const cards = secureCardStorage.loadCards();
+    const filteredCards = cards.filter(card => card.id !== cardId);
+    secureCardStorage.saveCards(filteredCards);
+  }
+};
+
+// User profile storage helper
+const userProfileStorage = {
+  // Save profile picture to localStorage (in a real app, this would upload to server/CDN)
+  saveProfilePicture: (imageData: string) => {
+    localStorage.setItem('userProfilePicture', imageData);
+  },
+  
+  // Get profile picture from localStorage
+  getProfilePicture: (): string | null => {
+    return localStorage.getItem('userProfilePicture');
+  },
+  
+  // Save user profile data
+  saveProfileData: (name: string | undefined, email: string | undefined, is2FAEnabled: boolean) => {
+    const userData = { 
+      name: name || 'User', 
+      email: email || 'user@example.com', 
+      is2FAEnabled 
+    };
+    localStorage.setItem('userData', JSON.stringify(userData));
+  },
+  
+  // Get user profile data
+  getProfileData: () => {
+    try {
+      const userData = localStorage.getItem('userData');
+      return userData ? JSON.parse(userData) : null;
+    } catch (error) {
+      console.error('Error loading user data from storage:', error);
+      return null;
+    }
+  }
+};
+
 export default function Profile() {
   const { user, getAuthHeader, isAuthenticated, logout, updateUserProfile } = useAuth();
   const navigate = useNavigate();
@@ -112,7 +204,7 @@ export default function Profile() {
   const [message, setMessage] = useState({ text: "", type: "" });
 
   // State for credit cards
-  const [creditCards, setCreditCards] = useState<CreditCard[]>([]);
+  const [creditCards, setCreditCards] = useState<Partial<CreditCard>[]>([]);
   const [showAddCard, setShowAddCard] = useState(false);
   const [newCard, setNewCard] = useState<CreditCard>({
     id: "",
@@ -140,22 +232,28 @@ export default function Profile() {
       try {
         setIsLoading(true);
         
-        // Using mock data instead of API calls
-        // Mock profile data
-        const profileData = {
-          name: user?.name || "User",
-          email: user?.email || "user@example.com",
-          profile_picture: user?.profilePicture || null,
-          is_2fa_enabled: user?.is2FAEnabled || false,
-        };
+        // Load data from localStorage (simulating database persistence)
+        const storedProfilePic = userProfileStorage.getProfilePicture();
+        const storedUserData = userProfileStorage.getProfileData();
+        const storedCards = secureCardStorage.loadCards();
         
-        setName(profileData.name);
-        setEmail(profileData.email);
-        setProfilePicture(profileData.profile_picture);
-        setIs2FAEnabled(profileData.is_2fa_enabled);
+        // If we have stored user data, use it
+        if (storedUserData) {
+          setName(storedUserData.name || user?.name || "User");
+          setEmail(storedUserData.email || user?.email || "user@example.com");
+          setIs2FAEnabled(storedUserData.is2FAEnabled || false);
+        } else {
+          // Otherwise use data from AuthContext
+          setName(user?.name || "User");
+          setEmail(user?.email || "user@example.com");
+          setIs2FAEnabled(user?.is2FAEnabled || false);
+        }
         
-        // Start with an empty credit cards array
-        setCreditCards([]);
+        // Set profile picture from localStorage or AuthContext
+        setProfilePicture(storedProfilePic || user?.profilePicture || null);
+        
+        // Set credit cards from localStorage
+        setCreditCards(storedCards);
       } catch (error) {
         console.error("Error fetching user data:", error);
         setMessage({
@@ -180,6 +278,9 @@ export default function Profile() {
         const result = reader.result as string;
         setProfilePicture(result);
         
+        // Store in localStorage to persist between sessions
+        userProfileStorage.saveProfilePicture(result);
+        
         // Update user context with new profile picture
         if (updateUserProfile) {
           updateUserProfile({ profilePicture: result });
@@ -192,7 +293,7 @@ export default function Profile() {
       };
       
       reader.readAsDataURL(file);
-      // In a real app, we would upload to server here
+      // In a real app, we would upload to server/CDN here
     }
   };
 
@@ -209,6 +310,9 @@ export default function Profile() {
       
       // Mock API call - in a real app this would update the backend
       await new Promise(resolve => setTimeout(resolve, 500));
+      
+      // Save to localStorage to persist between sessions
+      userProfileStorage.saveProfileData(name, email, is2FAEnabled);
       
       // Update user in context
       if (updateUserProfile) {
@@ -314,7 +418,13 @@ export default function Profile() {
         cardNumber: newCard.cardNumber.replace(/\s+/g, "")
       };
       
-      setCreditCards([...creditCards, createdCard]);
+      // Store card securely (in localStorage for demo purposes)
+      secureCardStorage.addCard(createdCard);
+      
+      // Add to local state (but only the secure version without CVV)
+      const secureCard = secureCardStorage.encryptCard(createdCard);
+      setCreditCards([...creditCards, secureCard]);
+      
       setShowAddCard(false);
       setNewCard({
         id: "",
@@ -347,7 +457,12 @@ export default function Profile() {
       // Mock API call to delete card
       await new Promise(resolve => setTimeout(resolve, 500));
       
+      // Remove from localStorage
+      secureCardStorage.removeCard(cardId);
+      
+      // Update local state
       setCreditCards(creditCards.filter(card => card.id !== cardId));
+      
       setMessage({
         text: "Credit card removed successfully!",
         type: "success",
@@ -398,6 +513,14 @@ export default function Profile() {
         setShowQRCode(false);
         setVerificationCode("");
         
+        // Save to localStorage
+        const userData = userProfileStorage.getProfileData() || { name: "", email: "" };
+        userProfileStorage.saveProfileData(
+          name, 
+          email, 
+          true
+        );
+        
         // Update user context
         if (updateUserProfile) {
           updateUserProfile({ is2FAEnabled: true });
@@ -431,6 +554,14 @@ export default function Profile() {
       
       setIs2FAEnabled(false);
       
+      // Save to localStorage
+      const userData = userProfileStorage.getProfileData() || { name: "", email: "" };
+      userProfileStorage.saveProfileData(
+        name, 
+        email, 
+        false
+      );
+      
       // Update user context
       if (updateUserProfile) {
         updateUserProfile({ is2FAEnabled: false });
@@ -457,7 +588,8 @@ export default function Profile() {
   };
 
   // Mask credit card number except for last 4 digits
-  const maskCardNumber = (number: string): string => {
+  const maskCardNumber = (number: string | undefined): string => {
+    if (!number) return "•••• •••• •••• ••••";
     const last4 = number.slice(-4);
     return `•••• •••• •••• ${last4}`;
   };
@@ -547,7 +679,7 @@ export default function Profile() {
                 </button>
               </div>
 
-              <div className="bg-gray-50 dark:bg-gray-700 rounded-lg p-6">
+              <div className="bg-white dark:bg-gray-700 rounded-lg p-6 border border-gray-200 dark:border-gray-600 shadow-sm">
                 {isEditingProfile ? (
                   <div className="space-y-4">
                     <div>
@@ -562,7 +694,7 @@ export default function Profile() {
                         id="name"
                         value={name}
                         onChange={(e) => setName(e.target.value)}
-                        className="w-full rounded-md border border-gray-300 dark:border-gray-600 dark:bg-gray-800 px-3 py-2 text-gray-900 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
+                        className="w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-gray-900 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
                       />
                     </div>
                     <div>
@@ -577,7 +709,7 @@ export default function Profile() {
                         id="email"
                         value={email}
                         onChange={(e) => setEmail(e.target.value)}
-                        className="w-full rounded-md border border-gray-300 dark:border-gray-600 dark:bg-gray-800 px-3 py-2 text-gray-900 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
+                        className="w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-gray-900 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
                       />
                     </div>
                     <div className="flex justify-end">
@@ -669,7 +801,7 @@ export default function Profile() {
                       </div>
                     </div>
                     <button
-                      onClick={() => handleDeleteCard(card.id)}
+                      onClick={() => card.id ? handleDeleteCard(card.id) : null}
                       className="text-red-600 dark:text-red-400 hover:text-red-800 dark:hover:text-red-300"
                     >
                       <XCircleIcon className="h-5 w-5" />
