@@ -1,7 +1,8 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
 import { Line } from "react-chartjs-2";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -90,290 +91,61 @@ interface Watchlist {
 }
 
 type TimeRange = '1D' | '7D' | '30D' | '1Y' | '5Y';
+type AuthHeader = { Authorization: string } | null;
 
-export default function Recommendations() {
-  const { user, getAuthHeader, isAuthenticated } = useAuth();
-  const navigate = useNavigate();
-  const [recommendations, setRecommendations] = useState<Stock[]>([]);
-  const [watchlist, setWatchlist] = useState<Watchlist[]>([]);
-  const [selectedStocks, setSelectedStocks] = useState<string[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [recommendationsError, setRecommendationsError] = useState<string | null>(null);
-  const [watchlistError, setWatchlistError] = useState<string | null>(null);
-  const [selectedStock, setSelectedStock] = useState<Stock | null>(null);
-  const [timeRange, setTimeRange] = useState<TimeRange>('1Y');
-  const [isLoadingStock, setIsLoadingStock] = useState(false);
-  const [stockError, setStockError] = useState<string | null>(null);
-  const [isPageLoaded, setIsPageLoaded] = useState(false);
-  const [sortedDates, setSortedDates] = useState<string[]>([]);
-
-  const colors = ['#FF6384', '#36A2EB', '#FFCE56', '#4BC0C0', '#9966FF', '#FF9F40', '#C9CBCF', '#E57373', '#81C784', '#64B5F6'];
-
-  const fetchWithTimeout = async (url: string, options: RequestInit, timeout = 5000): Promise<Response | null> => {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), timeout);
-
-    try {
-      const response = await fetch(url, {
-        ...options,
-        signal: controller.signal
-      });
-      clearTimeout(timeoutId);
-      return response;
-    } catch (error) {
-      clearTimeout(timeoutId);
-      if (error instanceof Error && error.name === 'AbortError') {
-        return null;
-      }
-      throw error;
-    }
-  };
-
-  // First useEffect: Load watchlist and set up initial page state
-  useEffect(() => {
-    if (!isAuthenticated) {
-      navigate("/login");
-      return;
-    }
-
-    const fetchWatchlist = async () => {
-      try {
-        const authHeader = getAuthHeader();
-        if (!authHeader) return;
-
-        const watchlistResponse = await fetchWithTimeout(
-          "/api/watchlist",
-          {
-            headers: { ...authHeader, "Content-Type": "application/json" }
-          }
-        );
-
-        if (!watchlistResponse || !watchlistResponse.ok) {
-          setWatchlist([]);
-          setLoading(false);
-          setIsPageLoaded(true);
-          return;
+const useRecommendations = (authHeader: AuthHeader) => {
+  return useQuery({
+    queryKey: ['recommendations'],
+    queryFn: async () => {
+      if (!authHeader) return [];
+      const response = await fetch("/api/stocks/recommendations", {
+        headers: {
+          ...authHeader,
+          "Content-Type": "application/json"
         }
-
-        const watchlistData = await watchlistResponse.json() as WatchlistResponse[];
-        
-        const normalizedWatchlist = watchlistData.map((stock: WatchlistResponse) => ({
-          id: stock.id,
-          symbol: stock.symbol,
-          name: stock.name,
-          currentPrice: stock.current_price || 0,
-          change: stock.change || 0,
-          changePercent: stock.change_percent || 0,
-          volume: stock.volume || 0,
-          marketCap: stock.market_cap || 0,
-          sharesOwned: stock.shares_owned || 0,
-          totalValue: stock.total_value || 0,
-          historicalData: []
-        }));
-
-        const watchlistWithHistory = await Promise.all(
-          normalizedWatchlist.map(async (stock: Watchlist) => {
-            try {
-              const response = await fetchWithTimeout(
-                `/api/stocks/${stock.symbol}`,
-                {
-                  headers: { ...authHeader, "Content-Type": "application/json" }
-                }
-              );
-              if (response?.ok) {
-                const stockData = await response.json() as StockResponse;
-                return {
-                  ...stock,
-                  historicalData: stockData.historical_data?.map(point => ({
-                    date: point.date,
-                    price: point.price,
-                    is_intraday: point.date.includes(' ')
-                  })) || []
-                };
-              }
-              return stock;
-            } catch {
-              return stock;
-            }
-          })
-        );
-        setWatchlist(watchlistWithHistory);
-        setSelectedStocks(watchlistWithHistory.map(stock => stock.symbol));
-      } catch {
-        setWatchlist([]);
-      } finally {
-        setLoading(false);
-        setIsPageLoaded(true);
-      }
-    };
-
-    fetchWatchlist();
-  }, [getAuthHeader, isAuthenticated, navigate]);
-
-  // Second useEffect: Load recommendations after page is loaded
-  useEffect(() => {
-    if (!isPageLoaded || !isAuthenticated) return;
-
-    const fetchRecommendations = async () => {
-      try {
-        const authHeader = getAuthHeader();
-        if (!authHeader) return;
-
-        const recommendationsResponse = await fetchWithTimeout(
-          "/api/stocks/recommendations",
-          {
-            headers: { ...authHeader, "Content-Type": "application/json" }
-          }
-        );
-
-        if (!recommendationsResponse || !recommendationsResponse.ok) {
-          setRecommendations([]);
-          return;
-        }
-
-        const recommendationsData = await recommendationsResponse.json() as StockResponse[];
-        
-        const normalizedRecommendations = recommendationsData.map((stock: StockResponse) => ({
-          symbol: stock.symbol,
-          name: stock.name,
-          currentPrice: stock.current_price || 0,
-          change: stock.change || 0,
-          changePercent: stock.change_percent || 0,
-          volume: stock.volume || 0,
-          marketCap: stock.market_cap || 0,
-          historicalData: stock.historical_data?.map(point => ({
-            date: point.date,
-            price: point.price,
-            is_intraday: point.date.includes(' ')
-          })) || [],
-          recommendation: stock.recommendation || 'N/A',
-          recommendationReason: stock.recommendation_reason || 'No reason provided'
-        }));
-        setRecommendations(normalizedRecommendations);
-      } catch {
-        setRecommendations([]);
-      }
-    };
-
-    fetchRecommendations();
-  }, [isPageLoaded, getAuthHeader, isAuthenticated]);
-
-  // Add useEffect to process dates when watchlist or selected stocks change
-  useEffect(() => {
-    if (watchlist.length === 0 || selectedStocks.length === 0) {
-      setSortedDates([]);
-      return;
-    }
-
-    // Set the end date to today at the start of the day
-    const endDate = new Date();
-    endDate.setHours(0, 0, 0, 0);
-
-    // Set the start date to exactly one year before today
-    const startDate = new Date(endDate);
-    startDate.setFullYear(endDate.getFullYear() - 1);
-
-    // Get all unique dates from all selected stocks
-    const allDates = new Set<string>();
-    selectedStocks.forEach(symbol => {
-      const stock = watchlist.find(s => s.symbol === symbol);
-      if (stock?.historicalData) {
-        stock.historicalData
-          .filter(item => {
-            const itemDate = new Date(item.date);
-            itemDate.setHours(0, 0, 0, 0); // Normalize the item date to start of day
-            return itemDate >= startDate && itemDate <= endDate && !item.is_intraday;
-          })
-          .forEach(item => allDates.add(item.date));
-      }
-    });
-
-    // Sort dates chronologically
-    const newSortedDates = Array.from(allDates).sort((a, b) => new Date(a).getTime() - new Date(b).getTime());
-    
-    // Ensure we have data points at the start and end of our range
-    if (newSortedDates.length > 0) {
-      const firstDate = new Date(newSortedDates[0]);
-      const lastDate = new Date(newSortedDates[newSortedDates.length - 1]);
-      
-      // If we don't have data at the start date, add it
-      if (firstDate > startDate) {
-        newSortedDates.unshift(startDate.toISOString().split('T')[0]);
-      }
-      
-      // If we don't have data at the end date, add it
-      if (lastDate < endDate) {
-        newSortedDates.push(endDate.toISOString().split('T')[0]);
-      }
-    }
-
-    setSortedDates(newSortedDates);
-  }, [watchlist, selectedStocks]);
-
-  const handleStockSelect = (symbol: string) => {
-    fetchStockData(symbol);
-  };
-
-  const fetchStockData = async (symbol: string) => {
-    try {
-      setIsLoadingStock(true);
-      setStockError(null);
-      const authHeader = getAuthHeader();
-      if (!authHeader) return;
-      const response = await fetch(`/api/stocks/${symbol}`, {
-        headers: { ...authHeader, "Content-Type": "application/json" }
       });
-      if (!response.ok) throw new Error("Failed to fetch stock data");
-      const stockData = await response.json();
-      const normalizedStockData = {
-        ...stockData,
-        currentPrice: stockData.current_price,
-        change: stockData.change,
-        changePercent: stockData.change_percent,
-        volume: stockData.volume,
-        marketCap: stockData.market_cap,
-        historicalData: stockData.historical_data?.map((point: any) => ({
+      if (!response.ok) throw new Error("Failed to fetch recommendations");
+      const data = await response.json() as StockResponse[];
+      return data.map((stock: StockResponse) => ({
+        symbol: stock.symbol,
+        name: stock.name,
+        currentPrice: stock.current_price || 0,
+        change: stock.change || 0,
+        changePercent: stock.change_percent || 0,
+        volume: stock.volume || 0,
+        marketCap: stock.market_cap || 0,
+        historicalData: stock.historical_data?.map(point => ({
           date: point.date,
           price: point.price,
           is_intraday: point.date.includes(' ')
-        })) || []
-      };
-      setSelectedStock(normalizedStockData);
-    } catch (error) {
-      setStockError("Failed to fetch stock data.");
-    } finally {
-      setIsLoadingStock(false);
-    }
-  };
+        })) || [],
+        recommendation: stock.recommendation || 'N/A',
+        recommendationReason: stock.recommendation_reason || 'No reason provided'
+      })) as Stock[];
+    },
+    enabled: !!authHeader,
+    staleTime: 30000, // Consider data fresh for 30 seconds
+  });
+};
 
-  const handleAddToWatchlist = async (symbol: string) => {
-    try {
-      const authHeader = getAuthHeader();
-      if (!authHeader) return;
-
-      const response = await fetchWithTimeout(
-        "/api/watchlist",
-        {
-          method: "POST",
-          headers: { ...authHeader, "Content-Type": "application/json" },
-          body: JSON.stringify({ symbol })
+const useWatchlistWithHistory = (authHeader: AuthHeader) => {
+  return useQuery({
+    queryKey: ['watchlistWithHistory'],
+    queryFn: async () => {
+      if (!authHeader) return [];
+      
+      // Fetch watchlist
+      const watchlistResponse = await fetch("/api/watchlist", {
+        headers: {
+          ...authHeader,
+          "Content-Type": "application/json"
         }
-      );
-
-      if (!response || !response.ok) return;
-
-      // Refetch watchlist with timeout
-      const watchlistResponse = await fetchWithTimeout(
-        "/api/watchlist",
-        {
-          headers: { ...authHeader, "Content-Type": "application/json" }
-        }
-      );
-
-      if (!watchlistResponse || !watchlistResponse.ok) return;
-
+      });
+      
+      if (!watchlistResponse.ok) throw new Error("Failed to fetch watchlist");
       const watchlistData = await watchlistResponse.json() as WatchlistResponse[];
       
+      // Normalize watchlist data
       const normalizedWatchlist = watchlistData.map((stock: WatchlistResponse) => ({
         id: stock.id,
         symbol: stock.symbol,
@@ -388,17 +160,17 @@ export default function Recommendations() {
         historicalData: []
       }));
 
-      // Fetch historical data with timeout
+      // Fetch historical data for each stock in parallel
       const watchlistWithHistory = await Promise.all(
         normalizedWatchlist.map(async (stock: Watchlist) => {
           try {
-            const response = await fetchWithTimeout(
-              `/api/stocks/${stock.symbol}`,
-              {
-                headers: { ...authHeader, "Content-Type": "application/json" }
+            const response = await fetch(`/api/stocks/${stock.symbol}`, {
+              headers: {
+                ...authHeader,
+                "Content-Type": "application/json"
               }
-            );
-            if (response?.ok) {
+            });
+            if (response.ok) {
               const stockData = await response.json() as StockResponse;
               return {
                 ...stock,
@@ -415,199 +187,272 @@ export default function Recommendations() {
           }
         })
       );
-      setWatchlist(watchlistWithHistory);
-      setSelectedStocks(watchlistWithHistory.map(stock => stock.symbol));
-    } catch {
-      // Silently handle any errors
+
+      return watchlistWithHistory as Watchlist[];
+    },
+    enabled: !!authHeader,
+    staleTime: 30000,
+  });
+};
+
+const getFilteredHistoricalData = (data: Stock['historicalData'] | undefined, range: TimeRange) => {
+  if (!data || !Array.isArray(data)) return [];
+
+  const now = new Date();
+  const cutoff = new Date(now);
+  
+  switch (range) {
+    case '7D':
+      cutoff.setDate(now.getDate() - 7);
+      break;
+    case '30D':
+      cutoff.setDate(now.getDate() - 30);
+      break;
+    case '1Y':
+      cutoff.setFullYear(now.getFullYear() - 1);
+      break;
+    case '5Y':
+      cutoff.setFullYear(now.getFullYear() - 5);
+      break;
+    default:
+      cutoff.setHours(now.getHours() - 24);
+  }
+
+  return data.filter(item => {
+    const itemDate = new Date(item.date);
+    return itemDate >= cutoff && !item.is_intraday;
+  });
+};
+
+// Move colors array to component scope
+const COLORS = ['#FF6384', '#36A2EB', '#FFCE56', '#4BC0C0', '#9966FF', '#FF9F40', '#C9CBCF', '#E57373', '#81C784', '#64B5F6'];
+
+const prepareChartData = (watchlist: Watchlist[] | undefined, selectedStocks: string[], range: TimeRange) => {
+  if (!watchlist || watchlist.length === 0 || selectedStocks.length === 0) {
+    return { labels: [], datasets: [], options: {} };
+  }
+
+  // Get all unique dates from selected stocks
+  const allDates = new Set<string>();
+  selectedStocks.forEach(symbol => {
+    const stock = watchlist.find(s => s.symbol === symbol);
+    if (stock?.historicalData) {
+      getFilteredHistoricalData(stock.historicalData, range)
+        .forEach(item => allDates.add(item.date));
     }
-  };
+  });
 
-  const prepareChartData = (watchlist: Watchlist[], selectedStocks: string[], range: TimeRange) => {
-    if (watchlist.length === 0 || selectedStocks.length === 0 || sortedDates.length === 0) {
-      return { labels: [], datasets: [], options: {} };
-    }
+  // Sort dates chronologically
+  const sortedDates = Array.from(allDates).sort((a, b) => new Date(a).getTime() - new Date(b).getTime());
 
-    // Set the end date to today at the start of the day
-    const endDate = new Date();
-    endDate.setHours(0, 0, 0, 0);
+  // Create datasets for each selected stock
+  const datasets = selectedStocks.map((symbol, index) => {
+    const stock = watchlist.find(s => s.symbol === symbol);
+    if (!stock?.historicalData) return null;
 
-    // Set the start date based on the selected range
-    const startDate = new Date(endDate);
-    switch (range) {
-      case '7D':
-        startDate.setDate(endDate.getDate() - 7);
-        break;
-      case '30D':
-        startDate.setDate(endDate.getDate() - 30);
-        break;
-      case '1Y':
-        startDate.setFullYear(endDate.getFullYear() - 1);
-        break;
-      case '5Y':
-        startDate.setFullYear(endDate.getFullYear() - 5);
-        break;
-    }
+    const color = COLORS[index % COLORS.length];
+    const priceMap = new Map(
+      getFilteredHistoricalData(stock.historicalData, range)
+        .map(item => [item.date, item.price])
+    );
 
-    // Filter dates based on the selected range
-    const filteredDates = sortedDates.filter(date => {
-      const dateObj = new Date(date);
-      dateObj.setHours(0, 0, 0, 0);
-      return dateObj >= startDate && dateObj <= endDate;
-    });
+    const data = sortedDates.map(date => priceMap.get(date) ?? null);
 
-    // Use filtered dates instead of all dates
-    const sampledDates = filteredDates;
+    return {
+      label: symbol,
+      data,
+      borderColor: color,
+      backgroundColor: `${color}20`,
+      fill: false,
+      tension: 0,
+      pointRadius: 1,
+      pointHoverRadius: 4,
+      pointBackgroundColor: color,
+      pointBorderColor: color,
+      borderWidth: 1,
+      spanGaps: true,
+      showLine: true
+    };
+  }).filter(dataset => dataset !== null);
 
-    // Create datasets for each selected stock
-    const datasets = selectedStocks.map((symbol, index) => {
-      const stock = watchlist.find(s => s.symbol === symbol);
-      if (!stock?.historicalData) return null;
-
-      const color = colors[index % colors.length];
-      
-      // Create a map of date to price for quick lookup
-      const priceMap = new Map(
-        stock.historicalData
-          .filter(item => {
-            const itemDate = new Date(item.date);
-            itemDate.setHours(0, 0, 0, 0);
-            return itemDate >= startDate && itemDate <= endDate && !item.is_intraday;
-          })
-          .map(item => [item.date, item.price])
-      );
-
-      // Create data points for all dates, using null for missing data points
-      const data = sampledDates.map(date => priceMap.get(date) ?? null);
-
-      return {
-        label: symbol,
-        data,
-        borderColor: color,
-        backgroundColor: `${color}20`,
-        fill: false,
-        tension: 0, // No smoothing to show actual price movements
-        pointRadius: 1, // Smaller points to avoid overcrowding
-        pointHoverRadius: 4, // Larger points on hover
-        pointBackgroundColor: color,
-        pointBorderColor: color,
-        borderWidth: 1, // Thinner lines to show more detail
-        spanGaps: true,
-        showLine: true
-      };
-    }).filter(dataset => dataset !== null);
-
-    // Create labels from all dates
-    const oneMonthAgo = new Date(endDate);
-    oneMonthAgo.setMonth(endDate.getMonth() - 1);
-
-    const labels = sampledDates.map(date => {
-      const dateObj = new Date(date);
-      dateObj.setHours(0, 0, 0, 0);
-      if (dateObj > oneMonthAgo) {
-        return dateObj.toLocaleDateString([], { month: 'short', day: 'numeric' });
-      }
-      return dateObj.toLocaleDateString([], { month: 'short', year: '2-digit' });
-    });
-
-    const chartOptions = {
-      responsive: true,
-      maintainAspectRatio: false,
-      interaction: {
+  // Create chart options
+  const chartOptions = {
+    responsive: true,
+    maintainAspectRatio: false,
+    interaction: {
+      mode: 'index' as const,
+      intersect: false,
+    },
+    plugins: {
+      legend: { 
+        display: true, 
+        position: 'top' as const,
+        labels: {
+          usePointStyle: true,
+          pointStyle: 'circle',
+          padding: 20
+        }
+      },
+      tooltip: {
         mode: 'index' as const,
         intersect: false,
-      },
-      plugins: {
-        legend: { 
-          display: true, 
-          position: 'top' as const,
-          labels: {
-            usePointStyle: true,
-            pointStyle: 'circle',
-            padding: 20
-          }
-        },
-        tooltip: {
-          mode: 'index' as const,
-          intersect: false,
-          callbacks: {
-            label: (context: any) => {
-              const value = context.parsed.y;
-              if (value === null) return `${context.dataset.label}: No data`;
-              return `${context.dataset.label}: $${value.toFixed(2)}`;
-            },
-            title: (context: any) => {
-              const dataIndex = context[0].dataIndex;
-              const date = new Date(sampledDates[dataIndex]);
-              return date.toLocaleDateString([], { 
-                weekday: 'long',
-                year: 'numeric',
-                month: 'long',
-                day: 'numeric'
-              });
-            }
-          }
-        }
-      },
-      scales: {
-        x: { 
-          grid: { 
-            display: true,
-            color: 'rgba(156, 163, 175, 0.1)',
-            drawBorder: false
+        callbacks: {
+          label: (context: any) => {
+            const value = context.parsed.y;
+            if (value === null) return `${context.dataset.label}: No data`;
+            return `${context.dataset.label}: $${value.toFixed(2)}`;
           },
-          ticks: {
-            maxRotation: 45,
-            minRotation: 45,
-            autoSkip: true,
-            maxTicksLimit: range === '7D' ? 7 : range === '30D' ? 15 : 20, // Adjust number of ticks based on range
-            font: {
-              size: 10
-            },
-            callback: (value: any, index: number) => {
-              const date = new Date(sampledDates[index]);
-              if (range === '7D') {
-                return date.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' });
-              } else if (range === '30D') {
-                return date.toLocaleDateString([], { month: 'short', day: 'numeric' });
-              } else if (date > oneMonthAgo) {
-                return date.toLocaleDateString([], { month: 'short', day: 'numeric' });
-              }
-              return date.toLocaleDateString([], { month: 'short', year: '2-digit' });
-            }
-          }
-        },
-        y: {
-          position: 'right' as const,
-          grid: { 
-            color: 'rgba(156, 163, 175, 0.1)',
-            drawBorder: false
-          },
-          ticks: { 
-            callback: (value: any) => `$${value.toFixed(2)}`,
-            font: {
-              size: 10
-            },
-            maxTicksLimit: 10 // Limit y-axis ticks to prevent overcrowding
+          title: (context: any) => {
+            const date = new Date(sortedDates[context[0].dataIndex]);
+            return date.toLocaleDateString([], { 
+              weekday: 'long',
+              year: 'numeric',
+              month: 'long',
+              day: 'numeric'
+            });
           }
         }
       }
-    };
-
-    return { labels, datasets, options: chartOptions };
+    },
+    scales: {
+      x: { 
+        grid: { 
+          display: true,
+          color: 'rgba(156, 163, 175, 0.1)',
+          drawBorder: false
+        },
+        ticks: {
+          maxRotation: 45,
+          minRotation: 45,
+          autoSkip: true,
+          maxTicksLimit: range === '7D' ? 7 : range === '30D' ? 15 : 20,
+          font: { size: 10 },
+          callback: (value: any, index: number) => {
+            const date = new Date(sortedDates[index]);
+            if (range === '7D') {
+              return date.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' });
+            } else if (range === '30D') {
+              return date.toLocaleDateString([], { month: 'short', day: 'numeric' });
+            }
+            return date.toLocaleDateString([], { month: 'short', year: '2-digit' });
+          }
+        }
+      },
+      y: {
+        position: 'right' as const,
+        grid: { 
+          color: 'rgba(156, 163, 175, 0.1)',
+          drawBorder: false
+        },
+        ticks: { 
+          callback: (value: any) => `$${value.toFixed(2)}`,
+          font: { size: 10 },
+          maxTicksLimit: 10
+        }
+      }
+    }
   };
 
-  if (loading) return (
+  return { labels: sortedDates, datasets, options: chartOptions };
+};
+
+export default function Recommendations() {
+  const { user, getAuthHeader, isAuthenticated } = useAuth();
+  const navigate = useNavigate();
+  const queryClient = useQueryClient();
+  const [selectedStocks, setSelectedStocks] = useState<string[]>([]);
+  const [timeRange, setTimeRange] = useState<TimeRange>('1Y');
+  const [selectedStock, setSelectedStock] = useState<Stock | null>(null);
+
+  const authHeader = useMemo(() => getAuthHeader() as AuthHeader, [getAuthHeader]);
+
+  // Use React Query hooks
+  const { 
+    data: recommendations, 
+    isLoading: isRecommendationsLoading,
+    error: recommendationsError 
+  } = useRecommendations(authHeader);
+
+  const { 
+    data: watchlist,
+    isLoading: isWatchlistLoading,
+    error: watchlistError 
+  } = useWatchlistWithHistory(authHeader);
+
+  // Add to watchlist mutation
+  const addToWatchlistMutation = useMutation({
+    mutationFn: async (symbol: string) => {
+      if (!authHeader) throw new Error("Not authenticated");
+      
+      const response = await fetch("/api/watchlist", {
+        method: "POST",
+        headers: {
+          ...authHeader,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({ symbol })
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.detail || "Failed to add to watchlist");
+      }
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['watchlistWithHistory'] });
+    }
+  });
+
+  // Memoize chart data
+  const chartData = useMemo(() => {
+    if (!watchlist) return { labels: [], datasets: [], options: {} };
+    return prepareChartData(watchlist, selectedStocks, timeRange);
+  }, [watchlist, selectedStocks, timeRange]);
+
+  // Handle stock selection
+  const handleStockSelect = useCallback((symbol: string) => {
+    const stock = recommendations?.find(s => s.symbol === symbol) || null;
+    setSelectedStock(stock);
+  }, [recommendations]);
+
+  // Handle add to watchlist
+  const handleAddToWatchlist = useCallback((symbol: string) => {
+    addToWatchlistMutation.mutate(symbol);
+  }, [addToWatchlistMutation]);
+
+  // Update selected stocks when watchlist changes
+  useEffect(() => {
+    if (watchlist) {
+      setSelectedStocks(watchlist.map(stock => stock.symbol));
+    }
+  }, [watchlist]);
+
+  // Handle authentication
+  useEffect(() => {
+    if (!isAuthenticated) {
+      navigate("/login");
+    }
+  }, [isAuthenticated, navigate]);
+
+  const isLoading = isRecommendationsLoading || isWatchlistLoading;
+  const error = recommendationsError || watchlistError;
+
+  if (isLoading) return (
     <div className="min-h-screen pt-16 bg-gray-50 dark:bg-dark-bg flex items-center justify-center">
       <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600 dark:border-indigo-400"></div>
     </div>
   );
 
-  if (recommendationsError || watchlistError) return (
+  if (error) return (
     <div className="min-h-screen pt-16 bg-gray-50 dark:bg-dark-bg flex items-center justify-center">
       <div className="bg-white dark:bg-dark-surface p-8 rounded-lg shadow-md max-w-md w-full">
         <h2 className="text-2xl font-bold text-red-600 dark:text-red-400 mb-4">Error</h2>
-        <p className="text-gray-600 dark:text-gray-300 mb-4">{recommendationsError || watchlistError}</p>
-        <button onClick={() => window.location.reload()} className="w-full bg-indigo-600 text-white py-2 px-4 rounded-md hover:bg-indigo-700">Try Again</button>
+        <p className="text-gray-600 dark:text-gray-300 mb-4">
+          {error instanceof Error ? error.message : "An error occurred"}
+        </p>
+        <button onClick={() => window.location.reload()} className="w-full bg-indigo-600 text-white py-2 px-4 rounded-md hover:bg-indigo-700">
+          Try Again
+        </button>
       </div>
     </div>
   );
@@ -621,12 +466,12 @@ export default function Recommendations() {
             {/* Watchlist - Now appears first */}
             <div className="bg-white dark:bg-dark-surface rounded-lg shadow-md p-6 mb-6">
               <h2 className="text-2xl font-bold text-gray-900 dark:text-dark-text mb-6">Your Watchlist</h2>
-              {watchlist.length > 0 ? (
+              {watchlist && watchlist.length > 0 ? (
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                   {watchlist.map((stock, index) => (
                     <div key={stock.id} className="bg-gray-50 dark:bg-gray-800 rounded-lg p-4 shadow-sm hover:shadow-md transition-shadow">
                       <div className="flex items-center space-x-2 mb-2">
-                        <div className="w-3 h-3 rounded-full" style={{ backgroundColor: colors[index % colors.length] }}></div>
+                        <div className="w-3 h-3 rounded-full" style={{ backgroundColor: COLORS[index % COLORS.length] }}></div>
                         <input
                           type="checkbox"
                           checked={selectedStocks.includes(stock.symbol)}
@@ -701,11 +546,11 @@ export default function Recommendations() {
                   </button>
                 </div>
               </div>
-              {watchlist.length > 0 && selectedStocks.length > 0 ? (
+              {watchlist && watchlist.length > 0 && selectedStocks.length > 0 ? (
                 <div className="h-[500px]">
                   <Line
-                    data={prepareChartData(watchlist, selectedStocks, timeRange)}
-                    options={prepareChartData(watchlist, selectedStocks, timeRange).options}
+                    data={chartData}
+                    options={chartData.options}
                   />
                 </div>
               ) : (
@@ -716,7 +561,7 @@ export default function Recommendations() {
             {/* Top Recommendations - Now appears last */}
             <div className="bg-white dark:bg-dark-surface rounded-lg shadow-md p-6">
               <h2 className="text-2xl font-bold text-gray-900 dark:text-dark-text mb-6">Top 5 Recommended Stocks This Week</h2>
-              {recommendations.length > 0 ? (
+              {recommendations && recommendations.length > 0 ? (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                   {recommendations.slice(0, 5).map((stock, index) => (
                     <div key={stock.symbol} className="bg-gray-50 dark:bg-gray-800 rounded-lg p-6 shadow-sm hover:shadow-md transition-shadow">
