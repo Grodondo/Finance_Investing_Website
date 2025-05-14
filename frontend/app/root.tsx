@@ -4,6 +4,9 @@ import { useAuth } from "./contexts/AuthContext";
 import Navbar from "./components/Navbar";
 import ThemeToggle from "./components/ThemeToggle";
 import "./app.css";
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+
+const queryClient = new QueryClient();
 
 export default function Root() {
   const { isAuthenticated, loading } = useAuth();
@@ -30,10 +33,12 @@ export default function Root() {
   const showNavbar = isAuthenticated && !["/", "/login", "/register"].includes(location.pathname);
 
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-dark-bg">
-      {showNavbar && <Navbar />}
-      <Outlet />
-      <ThemeToggle />
-    </div>
+    <QueryClientProvider client={queryClient}>
+      <div className="min-h-screen bg-gray-50 dark:bg-dark-bg">
+        {showNavbar && <Navbar />}
+        <Outlet />
+        <ThemeToggle />
+      </div>
+    </QueryClientProvider>
   );
 }

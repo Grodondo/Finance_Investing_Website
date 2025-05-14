@@ -1,7 +1,10 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
 import { Line } from "react-chartjs-2";
+import { useQuery, useQueryClient, useMutation, UseQueryOptions } from "@tanstack/react-query";
+import debounce from "lodash/debounce";
+import type { DebouncedFunc } from "lodash";
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -78,16 +81,188 @@ interface SearchResult {
 // Update the TimeRange type
 type TimeRange = '1D' | '7D' | '30D' | '1Y';
 
+// Add type for auth header
+type AuthHeader = { Authorization: string } | null;
+
+// Update the custom hooks with proper types
+const useStockData = (symbol: string | null, authHeader: AuthHeader) => {
+  return useQuery({
+    queryKey: ['stock', symbol],
+    queryFn: async () => {
+      if (!symbol || !authHeader) return null;
+      const response = await fetch(`/api/stocks/${symbol}`, {
+        headers: {
+          ...authHeader,
+          "Content-Type": "application/json"
+        }
+      });
+      if (!response.ok) throw new Error("Failed to fetch stock data");
+      const data = await response.json();
+      return {
+        symbol: data.symbol,
+        name: data.name,
+        currentPrice: data.current_price,
+        change: data.change,
+        changePercent: data.change_percent,
+        volume: data.volume,
+        marketCap: data.market_cap,
+        historicalData: data.historical_data?.map((point: any) => ({
+          date: point.date,
+          price: point.price,
+          is_intraday: point.date.includes(' ')
+        })) || [],
+        fiftyTwoWeekHigh: data.fifty_two_week_high,
+        fiftyTwoWeekLow: data.fifty_two_week_low
+      } as Stock;
+    },
+    enabled: !!symbol && !!authHeader,
+    staleTime: 30000, // Consider data fresh for 30 seconds
+    gcTime: 5 * 60 * 1000, // Keep in cache for 5 minutes (replaced cacheTime with gcTime)
+  });
+};
+
+const useWatchlist = (authHeader: AuthHeader) => {
+  return useQuery({
+    queryKey: ['watchlist'],
+    queryFn: async () => {
+      if (!authHeader) return [];
+      const response = await fetch("/api/watchlist", {
+        headers: {
+          ...authHeader,
+          "Content-Type": "application/json"
+        }
+      });
+      if (!response.ok) throw new Error("Failed to fetch watchlist");
+      return response.json() as Promise<Watchlist[]>;
+    },
+    enabled: !!authHeader,
+    staleTime: 30000,
+  });
+};
+
+const usePortfolio = (authHeader: AuthHeader) => {
+  return useQuery({
+    queryKey: ['portfolio'],
+    queryFn: async () => {
+      if (!authHeader) return null;
+      const response = await fetch("/api/portfolio", {
+        headers: {
+          ...authHeader,
+          "Content-Type": "application/json"
+        }
+      });
+      if (!response.ok) throw new Error("Failed to fetch portfolio data");
+      return response.json() as Promise<Portfolio>;
+    },
+    enabled: !!authHeader,
+    staleTime: 30000,
+  });
+};
+
+// Move chart data preparation functions outside component
+const getFilteredHistoricalData = (data: Stock['historicalData'] | undefined, range: TimeRange) => {
+  if (!data || !Array.isArray(data)) {
+    return [];
+  }
+
+  const sortedData = [...data].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+  const now = new Date();
+  const ranges = {
+    '1D': 1,
+    '7D': 7,
+    '30D': 30,
+    '1Y': 365
+  };
+  const days = ranges[range];
+  
+  const cutoff = new Date(now);
+  if (range === '1D') {
+    cutoff.setHours(now.getHours() - 24);
+  } else {
+    cutoff.setDate(now.getDate() - days);
+    cutoff.setHours(0, 0, 0, 0);
+  }
+  
+  const dailyData = sortedData.filter(item => item.is_intraday === false);
+  const intradayData = sortedData.filter(item => item.is_intraday === true);
+  
+  let filtered: typeof data = [];
+  
+  if (range === '1D') {
+    filtered = intradayData.filter(item => {
+      const itemDate = new Date(item.date);
+      return itemDate >= cutoff;
+    });
+  } else {
+    filtered = dailyData.filter(item => {
+      const itemDate = new Date(item.date);
+      return itemDate >= cutoff;
+    });
+  }
+  
+  return filtered;
+};
+
+const prepareChartData = (data: Stock['historicalData'] | undefined, range: TimeRange) => {
+  const filteredData = getFilteredHistoricalData(data, range);
+  
+  if (filteredData.length === 0) {
+    return {
+      labels: [],
+      datasets: [{
+        label: 'Price',
+        data: [],
+        borderColor: 'rgb(99, 102, 241)',
+        backgroundColor: 'rgba(99, 102, 241, 0.1)',
+        fill: true,
+        tension: 0.4,
+        pointRadius: 0,
+        borderWidth: 2,
+      }]
+    };
+  }
+  
+  return {
+    labels: filteredData.map(item => {
+      const date = new Date(item.date);
+      if (range === '1D') {
+        return date.toLocaleTimeString([], { 
+          hour: '2-digit', 
+          minute: '2-digit',
+          hour12: false
+        });
+      } else if (range === '1Y') {
+        return date.toLocaleDateString([], { 
+          month: 'short', 
+          year: '2-digit'
+        });
+      } else {
+        return date.toLocaleDateString([], { 
+          month: 'short', 
+          day: 'numeric' 
+        });
+      }
+    }),
+    datasets: [
+      {
+        label: 'Price',
+        data: filteredData.map(item => item.price),
+        borderColor: 'rgb(99, 102, 241)',
+        backgroundColor: 'rgba(99, 102, 241, 0.1)',
+        fill: true,
+        tension: 0.4,
+        pointRadius: range === '1D' ? 2 : 0,
+        borderWidth: 2,
+      }
+    ]
+  };
+};
+
 export default function Investing() {
   const { user, logout, getAuthHeader, isAuthenticated } = useAuth();
   const navigate = useNavigate();
-  const [selectedStock, setSelectedStock] = useState<Stock | null>(null);
-  const [portfolio, setPortfolio] = useState<Portfolio | null>(null);
-  const [watchlist, setWatchlist] = useState<Watchlist[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [stockError, setStockError] = useState<string | null>(null);
-  const [isLoadingStock, setIsLoadingStock] = useState(false);
+  const queryClient = useQueryClient();
+  const [selectedStockSymbol, setSelectedStockSymbol] = useState<string | null>(null);
   const [timeRange, setTimeRange] = useState<TimeRange>('30D');
   const [orderType, setOrderType] = useState<'BUY' | 'SELL'>('BUY');
   const [orderQuantity, setOrderQuantity] = useState<number>(0);
@@ -96,550 +271,21 @@ export default function Investing() {
   const [isSearching, setIsSearching] = useState(false);
   const [isPlacingOrder, setIsPlacingOrder] = useState(false);
   const [orderError, setOrderError] = useState<string | null>(null);
+  const [componentError, setComponentError] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (!isAuthenticated) {
-      navigate("/login");
-      return;
-    }
+  const authHeader = useMemo(() => getAuthHeader() as AuthHeader, [getAuthHeader]);
 
-    const fetchData = async () => {
-      try {
-        const authHeader = getAuthHeader();
-        if (!authHeader) {
-          throw new Error("Not authenticated");
-        }
+  // Use React Query hooks with proper types
+  const { data: portfolio, isLoading: isPortfolioLoading, error: portfolioError } = usePortfolio(authHeader);
+  const { data: watchlist, isLoading: isWatchlistLoading, error: watchlistError } = useWatchlist(authHeader);
+  const { 
+    data: selectedStock, 
+    isLoading: isStockLoading, 
+    error: stockError 
+  } = useStockData(selectedStockSymbol, authHeader);
 
-        // Fetch portfolio data
-        const portfolioResponse = await fetch("/api/portfolio", {
-          headers: {
-            ...authHeader,
-            "Content-Type": "application/json"
-          }
-        });
-
-        if (!portfolioResponse.ok) {
-          throw new Error("Failed to fetch portfolio data");
-        }
-
-        const portfolioData = await portfolioResponse.json();
-        setPortfolio(portfolioData);
-
-        // Fetch watchlist
-        const watchlistResponse = await fetch("/api/watchlist", {
-          headers: {
-            ...authHeader,
-            "Content-Type": "application/json"
-          }
-        });
-
-        if (!watchlistResponse.ok) {
-          throw new Error("Failed to fetch watchlist");
-        }
-
-        const watchlistData = await watchlistResponse.json();
-        setWatchlist(watchlistData);
-      } catch (error) {
-        console.error("Error fetching data:", error);
-        setError(error instanceof Error ? error.message : "An error occurred");
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchData();
-  }, [getAuthHeader, isAuthenticated, navigate]);
-
-  const fetchStockData = async (symbol: string, retryCount = 0) => {
-    try {
-      setIsLoadingStock(true);
-      setStockError(null);
-
-      const authHeader = getAuthHeader();
-      if (!authHeader) return;
-
-      const response = await fetch(`/api/stocks/${symbol}`, {
-        headers: {
-          ...authHeader,
-          "Content-Type": "application/json"
-        }
-      });
-
-      if (response.status === 429) {
-        const data = await response.json();
-        // Extract retry time from error message
-        const retryMatch = data.detail?.match(/try again in (\d+) seconds/);
-        const retrySeconds = retryMatch ? parseInt(retryMatch[1]) : 30;
-        
-        if (retryCount < 3) {  // Max 3 retries
-          console.log(`Rate limited, retrying in ${retrySeconds} seconds (attempt ${retryCount + 1}/3)`);
-          setTimeout(() => fetchStockData(symbol, retryCount + 1), retrySeconds * 1000);
-          setStockError(`Rate limited. Retrying in ${retrySeconds} seconds...`);
-        } else {
-          setStockError("Unable to fetch stock data due to rate limits. Please try again later.");
-        }
-        return;
-      }
-
-      if (!response.ok) {
-        throw new Error("Failed to fetch stock data");
-      }
-
-      const stockData = await response.json();
-      console.log('Raw API response:', stockData);
-
-      // Map snake_case to camelCase
-      const normalizedStockData = {
-        symbol: stockData.symbol,
-        name: stockData.name,
-        currentPrice: stockData.current_price,
-        change: stockData.change,
-        changePercent: stockData.change_percent,
-        volume: stockData.volume,
-        marketCap: stockData.market_cap,
-        historicalData: stockData.historical_data?.map((point: any) => {
-          const hasTimeComponent = point.date.includes(' ');
-          return {
-            date: point.date,
-            price: point.price,
-            is_intraday: hasTimeComponent
-          };
-        }) || [],
-        fiftyTwoWeekHigh: stockData.fifty_two_week_high,
-        fiftyTwoWeekLow: stockData.fifty_two_week_low
-      };
-
-      // Update the watchlist with the new stock data
-      setWatchlist(prevWatchlist => 
-        prevWatchlist.map(stock => 
-          stock.symbol === symbol
-            ? {
-                ...stock,
-                currentPrice: normalizedStockData.currentPrice,
-                change: normalizedStockData.change,
-                changePercent: normalizedStockData.changePercent,
-                volume: normalizedStockData.volume,
-                marketCap: normalizedStockData.marketCap
-              }
-            : stock
-        )
-      );
-
-      setSelectedStock(normalizedStockData);
-      setStockError(null);
-    } catch (error) {
-      console.error("Error fetching stock data:", error);
-      if (error instanceof Error && !error.message.includes("Rate limited")) {
-        setStockError("Failed to fetch stock data. Please try again later.");
-      }
-    } finally {
-      setIsLoadingStock(false);
-    }
-  };
-
-  // Add a function to refresh watchlist data periodically
-  useEffect(() => {
-    if (!isAuthenticated || !watchlist.length) return;
-
-    const refreshWatchlistData = async () => {
-      try {
-        const authHeader = getAuthHeader();
-        if (!authHeader) return;
-
-        // Fetch fresh data for each stock in the watchlist
-        const updatedWatchlist = await Promise.all(
-          watchlist.map(async (stock) => {
-            try {
-              const response = await fetch(`/api/stocks/${stock.symbol}`, {
-                headers: {
-                  ...authHeader,
-                  "Content-Type": "application/json"
-                }
-              });
-
-              if (!response.ok) {
-                console.error(`Failed to fetch data for ${stock.symbol}`);
-                return stock; // Return existing data if fetch fails
-              }
-
-              const stockData = await response.json();
-              return {
-                ...stock,
-                currentPrice: stockData.current_price,
-                change: stockData.change,
-                changePercent: stockData.change_percent,
-                volume: stockData.volume,
-                marketCap: stockData.market_cap
-              };
-            } catch (error) {
-              console.error(`Error fetching data for ${stock.symbol}:`, error);
-              return stock; // Return existing data if fetch fails
-            }
-          })
-        );
-
-        setWatchlist(updatedWatchlist);
-      } catch (error) {
-        console.error("Error refreshing watchlist:", error);
-      }
-    };
-
-    // Refresh data every 30 seconds
-    const intervalId = setInterval(refreshWatchlistData, 30000);
-
-    // Initial refresh
-    refreshWatchlistData();
-
-    return () => clearInterval(intervalId);
-  }, [isAuthenticated, watchlist.length, getAuthHeader]);
-
-  const handleStockSelect = (symbol: string) => {
-    fetchStockData(symbol);
-  };
-
-  const handleLogout = async () => {
-    try {
-      await logout();
-      navigate("/login");
-    } catch (error) {
-      console.error("Logout error:", error);
-    }
-  };
-
-  const handleSearch = async (query: string) => {
-    setSearchQuery(query);
-    if (query.length < 2) {
-      setSearchResults([]);
-      return;
-    }
-
-    setIsSearching(true);
-    try {
-      const authHeader = getAuthHeader();
-      if (!authHeader) {
-        navigate("/login");
-        return;
-      }
-
-      const response = await fetch(`/api/stocks/search?q=${encodeURIComponent(query)}`, {
-        headers: {
-          ...authHeader,
-          "Content-Type": "application/json"
-        }
-      });
-
-      if (response.status === 401) {
-        // Token expired or invalid
-        await logout();
-        navigate("/login");
-        return;
-      }
-
-      if (!response.ok) {
-        throw new Error("Failed to search stocks");
-      }
-
-      const data = await response.json();
-      setSearchResults(data);
-    } catch (error) {
-      console.error("Error searching stocks:", error);
-      if (error instanceof Error && error.message.includes("Not authenticated")) {
-        navigate("/login");
-      }
-      setSearchResults([]);
-    } finally {
-      setIsSearching(false);
-    }
-  };
-
-  const handleAddToWatchlist = async (symbol: string) => {
-    try {
-      const authHeader = getAuthHeader();
-      if (!authHeader) return;
-
-      // First, get the stock ID by fetching the stock data
-      const stockResponse = await fetch(`/api/stocks/${symbol}`, {
-        headers: {
-          ...authHeader,
-          "Content-Type": "application/json"
-        }
-      });
-
-      if (!stockResponse.ok) {
-        throw new Error("Failed to fetch stock data");
-      }
-
-      const stockData = await stockResponse.json();
-
-      // Now add to watchlist using the stock ID
-      const response = await fetch("/api/watchlist", {
-        method: "POST",
-        headers: {
-          ...authHeader,
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify({ stock_id: stockData.id })
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.detail || "Failed to add to watchlist");
-      }
-
-      // Refresh watchlist
-      const watchlistResponse = await fetch("/api/watchlist", {
-        headers: {
-          ...authHeader,
-          "Content-Type": "application/json"
-        }
-      });
-
-      if (watchlistResponse.ok) {
-        const watchlistData = await watchlistResponse.json();
-        setWatchlist(watchlistData);
-      }
-
-      // Clear search
-      setSearchQuery("");
-      setSearchResults([]);
-    } catch (error) {
-      console.error("Error adding to watchlist:", error);
-      setError(error instanceof Error ? error.message : "Failed to add stock to watchlist");
-    }
-  };
-
-  const handleRemoveFromWatchlist = async (stockId: number) => {
-    try {
-      const authHeader = getAuthHeader();
-      if (!authHeader) return;
-
-      const response = await fetch(`/api/watchlist/${stockId}`, {
-        method: "DELETE",
-        headers: {
-          ...authHeader,
-          "Content-Type": "application/json"
-        }
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.detail || "Failed to remove from watchlist");
-      }
-
-      // Refresh watchlist
-      const watchlistResponse = await fetch("/api/watchlist", {
-        headers: {
-          ...authHeader,
-          "Content-Type": "application/json"
-        }
-      });
-
-      if (watchlistResponse.ok) {
-        const watchlistData = await watchlistResponse.json();
-        setWatchlist(watchlistData);
-      }
-    } catch (error) {
-      console.error("Error removing from watchlist:", error);
-      setError(error instanceof Error ? error.message : "Failed to remove stock from watchlist");
-    }
-  };
-
-  const handleOrderSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!selectedStock || orderQuantity <= 0) return;
-
-    setIsPlacingOrder(true);
-    setOrderError(null);
-
-    try {
-      const authHeader = getAuthHeader();
-      if (!authHeader) return;
-
-      const response = await fetch("/api/orders", {
-        method: "POST",
-        headers: {
-          ...authHeader,
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify({
-          symbol: selectedStock.symbol,
-          type: orderType,
-          quantity: orderQuantity,
-          price: selectedStock.currentPrice
-        })
-      });
-
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.detail || "Failed to place order");
-      }
-
-      // Refresh portfolio data
-      const portfolioResponse = await fetch("/api/portfolio", {
-        headers: {
-          ...authHeader,
-          "Content-Type": "application/json"
-        }
-      });
-
-      if (portfolioResponse.ok) {
-        const portfolioData = await portfolioResponse.json();
-        setPortfolio(portfolioData);
-      }
-
-      // Reset order form
-      setOrderQuantity(0);
-      setOrderType('BUY');
-    } catch (error) {
-      console.error("Error placing order:", error);
-      setOrderError(error instanceof Error ? error.message : "Failed to place order");
-    } finally {
-      setIsPlacingOrder(false);
-    }
-  };
-
-  // Update the getFilteredHistoricalData function
-  const getFilteredHistoricalData = (data: Stock['historicalData'] | undefined, range: TimeRange) => {
-    console.log('Raw historical data:', data);
-    
-    if (!data || !Array.isArray(data)) {
-      console.log('No valid historical data available');
-      return [];
-    }
-
-    // Sort data by date to ensure chronological order
-    const sortedData = [...data].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
-    console.log('Sorted data first point:', sortedData[0]);
-    console.log('Sorted data last point:', sortedData[sortedData.length - 1]);
-
-    const now = new Date();
-    const ranges = {
-      '1D': 1,
-      '7D': 7,
-      '30D': 30,
-      '1Y': 365
-    };
-    const days = ranges[range];
-    
-    // Calculate cutoff date based on range
-    const cutoff = new Date(now);
-    if (range === '1D') {
-      // For 1D, get data from exactly 24 hours ago
-      cutoff.setHours(now.getHours() - 24);
-    } else {
-      // For other ranges, get data from the start of the day N days ago
-      cutoff.setDate(now.getDate() - days);
-      cutoff.setHours(0, 0, 0, 0);
-    }
-    
-    console.log('Filtering data:', { 
-      range, 
-      days, 
-      cutoff: cutoff.toISOString(),
-      now: now.toISOString()
-    });
-    
-    // First separate daily and intraday data
-    const dailyData = sortedData.filter(item => item.is_intraday === false);
-    const intradayData = sortedData.filter(item => item.is_intraday === true);
-    
-    console.log('Daily data points:', dailyData.length);
-    console.log('Intraday data points:', intradayData.length);
-    
-    let filtered: typeof data = [];
-    
-    if (range === '1D') {
-      // For 1D view, use only intraday data from the last 24 hours
-      filtered = intradayData.filter(item => {
-        const itemDate = new Date(item.date);
-        return itemDate >= cutoff;
-      });
-      console.log('1D view - Filtered intraday data points:', filtered.length);
-    } else {
-      // For 7D, 30D, and 1Y views, use only daily data
-      filtered = dailyData.filter(item => {
-        const itemDate = new Date(item.date);
-        return itemDate >= cutoff;
-      });
-      
-      console.log(`${range} view - Filtered daily data points:`, filtered.length);
-    }
-    
-    if (filtered.length > 0) {
-      console.log('First filtered point:', filtered[0]);
-      console.log('Last filtered point:', filtered[filtered.length - 1]);
-    }
-    
-    return filtered;
-  };
-
-  // Update the prepareChartData function to handle 1Y view
-  const prepareChartData = (data: Stock['historicalData'] | undefined, range: TimeRange) => {
-    console.log('Preparing chart data for range:', range);
-    
-    const filteredData = getFilteredHistoricalData(data, range);
-    console.log('Filtered data for chart:', filteredData);
-    
-    if (filteredData.length === 0) {
-      console.log('No data points after filtering');
-      return {
-        labels: [],
-        datasets: [{
-          label: 'Price',
-          data: [],
-          borderColor: 'rgb(99, 102, 241)',
-          backgroundColor: 'rgba(99, 102, 241, 0.1)',
-          fill: true,
-          tension: 0.4,
-          pointRadius: 0,
-          borderWidth: 2,
-        }]
-      };
-    }
-    
-    const chartData = {
-      labels: filteredData.map(item => {
-        const date = new Date(item.date);
-        if (range === '1D') {
-          // For 1D view, show hour:minute
-          return date.toLocaleTimeString([], { 
-            hour: '2-digit', 
-            minute: '2-digit',
-            hour12: false
-          });
-        } else if (range === '1Y') {
-          // For 1Y view, show month and year
-          return date.toLocaleDateString([], { 
-            month: 'short', 
-            year: '2-digit'
-          });
-        } else {
-          // For other ranges, show month and day
-          return date.toLocaleDateString([], { 
-            month: 'short', 
-            day: 'numeric' 
-          });
-        }
-      }),
-      datasets: [
-        {
-          label: 'Price',
-          data: filteredData.map(item => item.price),
-          borderColor: 'rgb(99, 102, 241)',
-          backgroundColor: 'rgba(99, 102, 241, 0.1)',
-          fill: true,
-          tension: 0.4,
-          pointRadius: range === '1D' ? 2 : 0, // Show points for intraday data
-          borderWidth: 2,
-        }
-      ]
-    };
-    
-    return chartData;
-  };
-
-  // Update chart options to handle 1Y view
-  const chartOptions = {
+  // Memoize chart options
+  const chartOptions = useMemo(() => ({
     responsive: true,
     maintainAspectRatio: false,
     plugins: {
@@ -681,13 +327,11 @@ export default function Investing() {
         ticks: {
           maxRotation: 0,
           autoSkip: true,
-          maxTicksLimit: timeRange === '1D' ? 12 : timeRange === '1Y' ? 12 : 6, // Adjust ticks based on range
+          maxTicksLimit: timeRange === '1D' ? 12 : timeRange === '1Y' ? 12 : 6,
           callback: (value: any, index: number, values: any[]) => {
             if (timeRange === '1D') {
-              // For intraday, show every 2nd tick to avoid crowding
               return index % 2 === 0 ? value : '';
             } else if (timeRange === '1Y') {
-              // For 1Y view, show every 3rd tick
               return index % 3 === 0 ? value : '';
             }
             return value;
@@ -709,24 +353,230 @@ export default function Investing() {
       axis: 'x' as const,
       intersect: false
     }
-  };
+  }), [timeRange]);
 
-  // Add this helper function after the component's state declarations
-  const isInWatchlist = (symbol: string) => {
-    return watchlist.some(stock => stock.symbol === symbol);
-  };
+  // Memoize the debounced search function with proper type
+  const debouncedSearch = useMemo(
+    () => debounce(async (query: string) => {
+      if (query.length < 2) {
+        setSearchResults([]);
+        return;
+      }
 
-  if (loading) return (
+      setIsSearching(true);
+      try {
+        if (!authHeader) {
+          navigate("/login");
+          return;
+        }
+
+        const response = await fetch(`/api/stocks/search?q=${encodeURIComponent(query)}`, {
+          headers: {
+            ...authHeader,
+            "Content-Type": "application/json"
+          }
+        });
+
+        if (response.status === 401) {
+          await logout();
+          navigate("/login");
+          return;
+        }
+
+        if (!response.ok) throw new Error("Failed to search stocks");
+        const data = await response.json();
+        setSearchResults(data);
+      } catch (error) {
+        console.error("Error searching stocks:", error);
+        setSearchResults([]);
+      } finally {
+        setIsSearching(false);
+      }
+    }, 300) as DebouncedFunc<(query: string) => Promise<void>>,
+    [authHeader, navigate, logout]
+  );
+
+  // Memoize chart data preparation
+  const chartData = useMemo(() => {
+    if (!selectedStock?.historicalData) return null;
+    return prepareChartData(selectedStock.historicalData, timeRange);
+  }, [selectedStock?.historicalData, timeRange]);
+
+  // Memoize filtered historical data
+  const filteredHistoricalData = useMemo(() => {
+    if (!selectedStock?.historicalData) return [];
+    return getFilteredHistoricalData(selectedStock.historicalData, timeRange);
+  }, [selectedStock?.historicalData, timeRange]);
+
+  // Add to watchlist mutation
+  const addToWatchlistMutation = useMutation({
+    mutationFn: async (symbol: string) => {
+      if (!authHeader) throw new Error("Not authenticated");
+      
+      const stockResponse = await fetch(`/api/stocks/${symbol}`, {
+        headers: {
+          ...authHeader,
+          "Content-Type": "application/json"
+        }
+      });
+
+      if (!stockResponse.ok) throw new Error("Failed to fetch stock data");
+      const stockData = await stockResponse.json();
+
+      const response = await fetch("/api/watchlist", {
+        method: "POST",
+        headers: {
+          ...authHeader,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({ stock_id: stockData.id })
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.detail || "Failed to add to watchlist");
+      }
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['watchlist'] });
+      setSearchQuery("");
+      setSearchResults([]);
+    },
+    onError: (error) => {
+      setComponentError(error instanceof Error ? error.message : "Failed to add stock to watchlist");
+    }
+  });
+
+  // Remove from watchlist mutation
+  const removeFromWatchlistMutation = useMutation({
+    mutationFn: async (stockId: number) => {
+      if (!authHeader) throw new Error("Not authenticated");
+      
+      const response = await fetch(`/api/watchlist/${stockId}`, {
+        method: "DELETE",
+        headers: {
+          ...authHeader,
+          "Content-Type": "application/json"
+        }
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.detail || "Failed to remove from watchlist");
+      }
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['watchlist'] });
+    }
+  });
+
+  // Add order mutation
+  const orderMutation = useMutation({
+    mutationFn: async (orderData: { symbol: string; type: 'BUY' | 'SELL'; quantity: number; price: number }) => {
+      if (!authHeader) throw new Error("Not authenticated");
+      
+      const response = await fetch("/api/orders", {
+        method: "POST",
+        headers: {
+          ...authHeader,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify(orderData)
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.detail || "Failed to place order");
+      }
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['portfolio'] });
+      setOrderQuantity(0);
+      setOrderType('BUY');
+    },
+    onError: (error: Error) => {
+      setOrderError(error.message);
+    }
+  });
+
+  // Handle search input change
+  const handleSearch = useCallback((query: string) => {
+    setSearchQuery(query);
+    debouncedSearch(query);
+  }, [debouncedSearch]);
+
+  // Handle stock selection
+  const handleStockSelect = useCallback((symbol: string) => {
+    setSelectedStockSymbol(symbol);
+  }, []);
+
+  // Handle add to watchlist
+  const handleAddToWatchlist = useCallback((symbol: string) => {
+    addToWatchlistMutation.mutate(symbol);
+  }, [addToWatchlistMutation]);
+
+  // Handle remove from watchlist
+  const handleRemoveFromWatchlist = useCallback((stockId: number) => {
+    removeFromWatchlistMutation.mutate(stockId);
+  }, [removeFromWatchlistMutation]);
+
+  // Add handleOrderSubmit function
+  const handleOrderSubmit = useCallback(async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedStock || orderQuantity <= 0) return;
+
+    setIsPlacingOrder(true);
+    setOrderError(null);
+
+    try {
+      await orderMutation.mutateAsync({
+        symbol: selectedStock.symbol,
+        type: orderType,
+        quantity: orderQuantity,
+        price: selectedStock.currentPrice
+      });
+    } catch (error) {
+      // Error is handled by mutation
+    } finally {
+      setIsPlacingOrder(false);
+    }
+  }, [selectedStock, orderType, orderQuantity, orderMutation]);
+
+  // Update loading and error states
+  const isLoading = isPortfolioLoading || isWatchlistLoading;
+  const queryError = portfolioError || watchlistError || stockError;
+
+  // Add isInWatchlist helper function
+  const isInWatchlist = useCallback((symbol: string) => {
+    return watchlist?.some(stock => stock.symbol === symbol) ?? false;
+  }, [watchlist]);
+
+  // Handle errors
+  useEffect(() => {
+    if (queryError instanceof Error) {
+      setComponentError(queryError.message);
+    } else if (typeof queryError === 'string') {
+      setComponentError(queryError);
+    } else if (queryError) {
+      setComponentError('An error occurred while fetching data');
+    } else {
+      setComponentError(null);
+    }
+  }, [queryError]);
+
+  // ... rest of the component JSX ...
+
+  if (isLoading) return (
     <div className="min-h-screen pt-16 bg-gray-50 dark:bg-dark-bg flex items-center justify-center">
       <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600 dark:border-indigo-400"></div>
     </div>
   );
 
-  if (error) return (
+  if (componentError) return (
     <div className="min-h-screen pt-16 bg-gray-50 dark:bg-dark-bg flex items-center justify-center">
       <div className="bg-white dark:bg-dark-surface p-8 rounded-lg shadow-md max-w-md w-full">
         <h2 className="text-2xl font-bold text-red-600 dark:text-red-400 mb-4">Error</h2>
-        <p className="text-gray-600 dark:text-gray-300 mb-4">{error}</p>
+        <p className="text-gray-600 dark:text-gray-300 mb-4">{componentError}</p>
         <button onClick={() => window.location.reload()} className="w-full bg-indigo-600 text-white py-2 px-4 rounded-md hover:bg-indigo-700">Try Again</button>
       </div>
     </div>
@@ -740,7 +590,7 @@ export default function Investing() {
           <div className="col-span-12 lg:col-span-8">
             <div className="bg-white dark:bg-dark-surface rounded-lg shadow-sm p-6 mb-6">
               <h2 className="text-lg font-medium text-gray-900 dark:text-dark-text mb-6">Portfolio Overview</h2>
-              {loading ? (
+              {isLoading ? (
                 <div className="flex justify-center py-8">
                   <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600 dark:border-indigo-400"></div>
                 </div>
@@ -1063,7 +913,7 @@ export default function Investing() {
                     <p className="text-sm text-yellow-700 dark:text-yellow-300">{stockError}</p>
                   </div>
                 )}
-                {isLoadingStock && (
+                {isStockLoading && (
                   <div className="flex justify-center py-8">
                     <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600 dark:border-indigo-400"></div>
                   </div>
@@ -1163,11 +1013,11 @@ export default function Investing() {
             {/* Watchlist */}
             <div className="bg-white dark:bg-dark-surface rounded-lg shadow-sm p-6">
               <h2 className="text-lg font-medium text-gray-900 dark:text-dark-text mb-4">Watchlist</h2>
-              {loading ? (
+              {isLoading ? (
                 <div className="flex justify-center py-4">
                   <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-indigo-600 dark:border-indigo-400"></div>
                 </div>
-              ) : watchlist?.length > 0 ? (
+              ) : watchlist && watchlist.length > 0 ? (
                 <div className="space-y-4">
                   {watchlist.map((stock) => (
                     <div

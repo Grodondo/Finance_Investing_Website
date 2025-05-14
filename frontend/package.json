@@ -8,6 +8,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@tanstack/react-query": "^5.76.1",
     "chart.js": "^4.4.0",
     "isbot": "^5.1.27",
     "react": "^19.1.0",
@@ -17,6 +18,7 @@
   },
   "devDependencies": {
     "@react-router/dev": "^7.0.0",
+    "@types/lodash": "^4.17.16",
     "@types/node": "^20",
     "@types/react": "^19.1.2",
     "@types/react-dom": "^19.1.2",
