@@ -37,6 +37,9 @@ const CARD_TYPES = {
   },
 };
 
+// Mock data for development - empty by default
+const MOCK_CREDIT_CARDS: CreditCard[] = [];
+
 // Interface for credit card
 interface CreditCard {
   id: string;
@@ -47,8 +50,53 @@ interface CreditCard {
   type: string;
 }
 
+// Card brand icons in SVG format
+const CARD_ICONS = {
+  visa: (
+    <svg className="h-6 w-auto" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <path d="M10.3 13.1L13.6 18.6H11.6L9.4 14.9L8.2 18.6H6.3L8.3 12.8H10.2L10.3 13.1Z" fill="#2566AF"/>
+      <path d="M14.1 18.6L12.4 12.8H14.2L15.9 18.6H14.1Z" fill="#2566AF"/>
+      <path d="M18.7 12.9C18.1 12.9 17.5 13.1 17.1 13.3L16.9 14.8C17.3 14.5 17.8 14.3 18.3 14.3C19 14.3 19.4 14.6 19.4 15.1C19.4 16 18.2 16 17.9 16.5C17.6 17 17.9 17.6 18.4 18.2C18.9 18.7 19.7 18.8 20.5 18.6C20.9 18.5 21.2 18.4 21.5 18.2L21.7 16.7C21.3 17 20.8 17.2 20.3 17.2C19.7 17.2 19.2 16.9 19.2 16.4C19.2 15.5 20.4 15.5 20.7 15C21 14.5 20.7 13.9 20.3 13.4C19.8 13 19.2 12.8 18.7 12.9Z" fill="#2566AF"/>
+      <path d="M22.7 13.1L22.5 14.6H24.1L23.9 16.1H22.3L22.1 17.6H23.9L23.8 18.6H20.2L21.2 12.8H24.8L24.6 14.2L22.7 13.1Z" fill="#2566AF"/>
+      <path d="M27.3 11H19.5L18.5 19H26.3L27.3 11Z" fill="#EB001B" fillOpacity="0.1"/>
+      <path d="M27.3 11H23.4L18.5 19H22.4L27.3 11Z" fill="#0099DF" fillOpacity="0.1"/>
+    </svg>
+  ),
+  mastercard: (
+    <svg className="h-6 w-auto" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <path d="M15.3 11.2H16.7V20.8H15.3V11.2Z" fill="#FF5F00"/>
+      <path d="M15.6 11.2C14.3 12.3 13.5 13.9 13.5 15.7C13.5 17.5 14.3 19.1 15.6 20.2C16.9 19.1 17.7 17.5 17.7 15.7C17.7 13.9 16.9 12.3 15.6 11.2Z" fill="#EB001B"/>
+      <path d="M21.9 15.7C21.9 17.6 21 19.3 19.6 20.4C20.9 21.5 22.6 22.1 24.5 22.1C26.4 22.1 28.1 21.5 29.4 20.4C30.7 19.3 31.5 17.7 31.5 15.9C31.5 14.1 30.7 12.5 29.4 11.4C28.1 10.3 26.4 9.7 24.5 9.7C22.6 9.7 20.9 10.3 19.6 11.4C21 12.5 21.9 14 21.9 15.7Z" fill="#F79E1B"/>
+    </svg>
+  ),
+  amex: (
+    <svg className="h-6 w-auto" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <path d="M27 10H5C4.4 10 4 10.4 4 11V21C4 21.6 4.4 22 5 22H27C27.6 22 28 21.6 28 21V11C28 10.4 27.6 10 27 10Z" fill="#006FCF" fillOpacity="0.1"/>
+      <path d="M15.9 17.5H13.5L12.5 15.2L11.6 17.5H9.1L11.2 13.8L9.1 10.1H11.5L12.4 12.3L13.3 10.1H15.8L13.7 13.8L15.9 17.5Z" fill="#006FCF"/>
+      <path d="M16.6 17.5V10.1H20.9V12H18.6V13H20.7V14.8H18.6V15.7H20.9V17.5H16.6Z" fill="#006FCF"/>
+      <path d="M22.5 10.1H24.6L26.2 13.3V10.1H28.9L29.8 14.2L30.6 10.1H33.2V17.5H31.2V12.7L30.2 17.5H28.6L27.5 12.7V17.5H24.4L24 16.4H21.7L21.3 17.5H19.2L21.3 10.1H22.5ZM23.4 14.8L22.9 13.3L22.4 14.8H23.4Z" fill="#006FCF"/>
+    </svg>
+  ),
+  discover: (
+    <svg className="h-6 w-auto" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <path d="M27 22H5C4.4 22 4 21.6 4 21V11C4 10.4 4.4 10 5 10H27C27.6 10 28 10.4 28 11V21C28 21.6 27.6 22 27 22Z" fill="#4D4D4D" fillOpacity="0.1"/>
+      <path d="M16.3 16C16.3 18.2 18.1 20 20.3 20C22.5 20 24.3 18.2 24.3 16C24.3 13.8 22.5 12 20.3 12C18.1 12 16.3 13.8 16.3 16Z" fill="#FF6F00"/>
+      <path d="M7.8 13.6H9.2V18.5H7.8V13.6Z" fill="#4D4D4D"/>
+      <path d="M11.3 13.6L13.2 16.9V13.6H14.5V18.5H13.2L11.3 15.2V18.5H10V13.6H11.3Z" fill="#4D4D4D"/>
+      <path d="M15.3 17.4C15.8 18 16.5 18.3 17.3 18.3C17.7 18.3 18.2 18.2 18.6 18C19 17.8 19.3 17.5 19.6 17.1L18.7 16.5C18.5 16.7 18.3 16.9 18.1 17C17.9 17.1 17.6 17.1 17.3 17.1C16.9 17.1 16.5 17 16.2 16.7C15.9 16.4 15.7 16 15.7 15.5C15.7 15.1 15.9 14.7 16.2 14.4C16.5 14.1 16.9 13.9 17.3 13.9C17.6 13.9 17.9 14 18.1 14.1C18.3 14.2 18.5 14.3 18.7 14.6L19.6 14C19.3 13.6 19 13.3 18.6 13.1C18.2 12.9 17.7 12.8 17.3 12.8C16.5 12.8 15.8 13.1 15.3 13.7C14.8 14.3 14.5 14.9 14.5 15.6C14.5 16.2 14.8 16.9 15.3 17.4Z" fill="#4D4D4D"/>
+    </svg>
+  ),
+  generic: (
+    <svg className="h-6 w-auto" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <rect x="4" y="8" width="24" height="16" rx="2" fill="#E5E7EB"/>
+      <path d="M8 13H12V15H8V13Z" fill="#9CA3AF"/>
+      <path d="M8 17H16V19H8V17Z" fill="#9CA3AF"/>
+    </svg>
+  )
+};
+
 export default function Profile() {
-  const { user, getAuthHeader, isAuthenticated, logout } = useAuth();
+  const { user, getAuthHeader, isAuthenticated, logout, updateUserProfile } = useAuth();
   const navigate = useNavigate();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -56,8 +104,8 @@ export default function Profile() {
   const [name, setName] = useState(user?.name || "");
   const [email, setEmail] = useState(user?.email || "");
   const [isEditingProfile, setIsEditingProfile] = useState(false);
-  const [profilePicture, setProfilePicture] = useState<string | null>(null);
-  const [is2FAEnabled, setIs2FAEnabled] = useState(false);
+  const [profilePicture, setProfilePicture] = useState<string | null>(user?.profilePicture || null);
+  const [is2FAEnabled, setIs2FAEnabled] = useState(user?.is2FAEnabled || false);
   const [showQRCode, setShowQRCode] = useState(false);
   const [verificationCode, setVerificationCode] = useState("");
   const [isLoading, setIsLoading] = useState(false);
@@ -91,37 +139,23 @@ export default function Profile() {
     const fetchUserData = async () => {
       try {
         setIsLoading(true);
-        const authHeader = getAuthHeader();
-        if (!authHeader) return;
-
-        // Fetch profile data
-        const profileResponse = await fetch("/api/user/profile", {
-          headers: {
-            ...authHeader,
-            "Content-Type": "application/json",
-          },
-        });
-
-        if (profileResponse.ok) {
-          const profileData = await profileResponse.json();
-          setName(profileData.name || "");
-          setEmail(profileData.email || "");
-          setProfilePicture(profileData.profile_picture || null);
-          setIs2FAEnabled(profileData.is_2fa_enabled || false);
-        }
-
-        // Fetch credit cards
-        const cardsResponse = await fetch("/api/user/credit-cards", {
-          headers: {
-            ...authHeader,
-            "Content-Type": "application/json",
-          },
-        });
-
-        if (cardsResponse.ok) {
-          const cardsData = await cardsResponse.json();
-          setCreditCards(cardsData);
-        }
+        
+        // Using mock data instead of API calls
+        // Mock profile data
+        const profileData = {
+          name: user?.name || "User",
+          email: user?.email || "user@example.com",
+          profile_picture: user?.profilePicture || null,
+          is_2fa_enabled: user?.is2FAEnabled || false,
+        };
+        
+        setName(profileData.name);
+        setEmail(profileData.email);
+        setProfilePicture(profileData.profile_picture);
+        setIs2FAEnabled(profileData.is_2fa_enabled);
+        
+        // Start with an empty credit cards array
+        setCreditCards([]);
       } catch (error) {
         console.error("Error fetching user data:", error);
         setMessage({
@@ -134,7 +168,7 @@ export default function Profile() {
     };
 
     fetchUserData();
-  }, [isAuthenticated, navigate, getAuthHeader]);
+  }, [isAuthenticated, navigate, user]);
 
   // Handle profile picture upload
   const handleProfilePictureUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -143,80 +177,49 @@ export default function Profile() {
       const reader = new FileReader();
       
       reader.onloadend = () => {
-        setProfilePicture(reader.result as string);
-      };
-      
-      reader.readAsDataURL(file);
-      // Here you would upload the file to your backend
-      uploadProfilePicture(file);
-    }
-  };
-
-  // Upload profile picture to server
-  const uploadProfilePicture = async (file: File) => {
-    try {
-      setIsLoading(true);
-      const authHeader = getAuthHeader();
-      if (!authHeader) return;
-
-      const formData = new FormData();
-      formData.append("profile_picture", file);
-
-      const response = await fetch("/api/user/profile-picture", {
-        method: "POST",
-        headers: {
-          ...authHeader,
-        },
-        body: formData,
-      });
-
-      if (response.ok) {
+        const result = reader.result as string;
+        setProfilePicture(result);
+        
+        // Update user context with new profile picture
+        if (updateUserProfile) {
+          updateUserProfile({ profilePicture: result });
+        }
+        
         setMessage({
           text: "Profile picture uploaded successfully!",
           type: "success",
         });
-      } else {
-        throw new Error("Failed to upload profile picture");
-      }
-    } catch (error) {
-      console.error("Error uploading profile picture:", error);
-      setMessage({
-        text: "Failed to upload profile picture. Please try again.",
-        type: "error",
-      });
-    } finally {
-      setIsLoading(false);
+      };
+      
+      reader.readAsDataURL(file);
+      // In a real app, we would upload to server here
     }
+  };
+
+  // Mock function for profile picture upload
+  const uploadProfilePicture = async (file: File) => {
+    // Mock implementation - in a real app this would call the API
+    return true;
   };
 
   // Save user profile changes
   const saveProfileChanges = async () => {
     try {
       setIsLoading(true);
-      const authHeader = getAuthHeader();
-      if (!authHeader) return;
-
-      const response = await fetch("/api/user/profile", {
-        method: "PUT",
-        headers: {
-          ...authHeader,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          name,
-          email,
-        }),
-      });
-
-      if (response.ok) {
-        setIsEditingProfile(false);
-        setMessage({
-          text: "Profile updated successfully!",
-          type: "success",
-        });
-      } else {
-        throw new Error("Failed to update profile");
+      
+      // Mock API call - in a real app this would update the backend
+      await new Promise(resolve => setTimeout(resolve, 500));
+      
+      // Update user in context
+      if (updateUserProfile) {
+        updateUserProfile({ name, email });
       }
+      
+      setIsEditingProfile(false);
+      setMessage({
+        text: "Profile updated successfully!",
+        type: "success",
+      });
     } catch (error) {
       console.error("Error updating profile:", error);
       setMessage({
@@ -300,40 +303,31 @@ export default function Profile() {
 
     try {
       setIsLoading(true);
-      const authHeader = getAuthHeader();
-      if (!authHeader) return;
-
-      const response = await fetch("/api/user/credit-cards", {
-        method: "POST",
-        headers: {
-          ...authHeader,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          ...newCard,
-          cardNumber: newCard.cardNumber.replace(/\s+/g, ""),
-        }),
+      
+      // Mock API call to add card
+      await new Promise(resolve => setTimeout(resolve, 500));
+      
+      // Generate random ID for new card
+      const createdCard = {
+        ...newCard,
+        id: `card-${Date.now()}`,
+        cardNumber: newCard.cardNumber.replace(/\s+/g, "")
+      };
+      
+      setCreditCards([...creditCards, createdCard]);
+      setShowAddCard(false);
+      setNewCard({
+        id: "",
+        cardNumber: "",
+        cardholderName: "",
+        expiryDate: "",
+        cvv: "",
+        type: "",
       });
-
-      if (response.ok) {
-        const createdCard = await response.json();
-        setCreditCards([...creditCards, createdCard]);
-        setShowAddCard(false);
-        setNewCard({
-          id: "",
-          cardNumber: "",
-          cardholderName: "",
-          expiryDate: "",
-          cvv: "",
-          type: "",
-        });
-        setMessage({
-          text: "Credit card added successfully!",
-          type: "success",
-        });
-      } else {
-        throw new Error("Failed to add credit card");
-      }
+      setMessage({
+        text: "Credit card added successfully!",
+        type: "success",
+      });
     } catch (error) {
       console.error("Error adding credit card:", error);
       setMessage({
@@ -349,25 +343,15 @@ export default function Profile() {
   const handleDeleteCard = async (cardId: string) => {
     try {
       setIsLoading(true);
-      const authHeader = getAuthHeader();
-      if (!authHeader) return;
-
-      const response = await fetch(`/api/user/credit-cards/${cardId}`, {
-        method: "DELETE",
-        headers: {
-          ...authHeader,
-        },
+      
+      // Mock API call to delete card
+      await new Promise(resolve => setTimeout(resolve, 500));
+      
+      setCreditCards(creditCards.filter(card => card.id !== cardId));
+      setMessage({
+        text: "Credit card removed successfully!",
+        type: "success",
       });
-
-      if (response.ok) {
-        setCreditCards(creditCards.filter(card => card.id !== cardId));
-        setMessage({
-          text: "Credit card removed successfully!",
-          type: "success",
-        });
-      } else {
-        throw new Error("Failed to delete credit card");
-      }
     } catch (error) {
       console.error("Error deleting credit card:", error);
       setMessage({
@@ -383,23 +367,12 @@ export default function Profile() {
   const handleEnable2FA = async () => {
     try {
       setIsLoading(true);
-      const authHeader = getAuthHeader();
-      if (!authHeader) return;
-
-      const response = await fetch("/api/user/2fa/setup", {
-        method: "POST",
-        headers: {
-          ...authHeader,
-        },
-      });
-
-      if (response.ok) {
-        const data = await response.json();
-        // Mock QR code for demo purposes (in a real app, this would come from the backend)
-        setShowQRCode(true);
-      } else {
-        throw new Error("Failed to setup 2FA");
-      }
+      
+      // Mock API call to setup 2FA
+      await new Promise(resolve => setTimeout(resolve, 500));
+      
+      // In a real app, we would get a QR code from the backend
+      setShowQRCode(true);
     } catch (error) {
       console.error("Error setting up 2FA:", error);
       setMessage({
@@ -415,24 +388,21 @@ export default function Profile() {
   const verify2FACode = async () => {
     try {
       setIsLoading(true);
-      const authHeader = getAuthHeader();
-      if (!authHeader) return;
-
-      const response = await fetch("/api/user/2fa/verify", {
-        method: "POST",
-        headers: {
-          ...authHeader,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          code: verificationCode,
-        }),
-      });
-
-      if (response.ok) {
+      
+      // Mock API call to verify 2FA code
+      await new Promise(resolve => setTimeout(resolve, 500));
+      
+      // Simple validation - in a real app the server would verify this
+      if (verificationCode.length === 6 && /^\d+$/.test(verificationCode)) {
         setIs2FAEnabled(true);
         setShowQRCode(false);
         setVerificationCode("");
+        
+        // Update user context
+        if (updateUserProfile) {
+          updateUserProfile({ is2FAEnabled: true });
+        }
+        
         setMessage({
           text: "Two-factor authentication enabled successfully!",
           type: "success",
@@ -455,25 +425,21 @@ export default function Profile() {
   const handleDisable2FA = async () => {
     try {
       setIsLoading(true);
-      const authHeader = getAuthHeader();
-      if (!authHeader) return;
-
-      const response = await fetch("/api/user/2fa/disable", {
-        method: "POST",
-        headers: {
-          ...authHeader,
-        },
-      });
-
-      if (response.ok) {
-        setIs2FAEnabled(false);
-        setMessage({
-          text: "Two-factor authentication disabled successfully!",
-          type: "success",
-        });
-      } else {
-        throw new Error("Failed to disable 2FA");
+      
+      // Mock API call to disable 2FA
+      await new Promise(resolve => setTimeout(resolve, 500));
+      
+      setIs2FAEnabled(false);
+      
+      // Update user context
+      if (updateUserProfile) {
+        updateUserProfile({ is2FAEnabled: false });
       }
+      
+      setMessage({
+        text: "Two-factor authentication disabled successfully!",
+        type: "success",
+      });
     } catch (error) {
       console.error("Error disabling 2FA:", error);
       setMessage({
@@ -691,11 +657,7 @@ export default function Profile() {
                   >
                     <div className="flex items-center">
                       <div className="h-10 w-10 bg-white dark:bg-gray-800 rounded-md flex items-center justify-center mr-4">
-                        <img
-                          src={`/assets/${CARD_TYPES[card.type as keyof typeof CARD_TYPES]?.icon || "generic-card.svg"}`}
-                          alt={card.type}
-                          className="h-6 w-auto"
-                        />
+                        {CARD_ICONS[card.type as keyof typeof CARD_ICONS] || CARD_ICONS.generic}
                       </div>
                       <div>
                         <p className="text-sm font-medium text-gray-900 dark:text-white">
@@ -717,7 +679,7 @@ export default function Profile() {
 
                 {/* Add new card form */}
                 {showAddCard && (
-                  <div className="bg-gray-50 dark:bg-gray-700 rounded-lg p-6">
+                  <div className="bg-white dark:bg-gray-700 rounded-lg p-6 border border-gray-200 dark:border-gray-600 shadow-sm">
                     <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-4">
                       Add Payment Method
                     </h3>
@@ -746,7 +708,7 @@ export default function Profile() {
                             cardErrors.cardNumber
                               ? "border-red-300 dark:border-red-600"
                               : "border-gray-300 dark:border-gray-600"
-                          } dark:bg-gray-800 px-3 py-2 text-gray-900 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500`}
+                          } bg-white dark:bg-gray-800 px-3 py-2 text-gray-900 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500`}
                         />
                         {cardErrors.cardNumber && (
                           <p className="mt-1 text-sm text-red-600 dark:text-red-400">
@@ -776,7 +738,7 @@ export default function Profile() {
                             cardErrors.cardholderName
                               ? "border-red-300 dark:border-red-600"
                               : "border-gray-300 dark:border-gray-600"
-                          } dark:bg-gray-800 px-3 py-2 text-gray-900 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500`}
+                          } bg-white dark:bg-gray-800 px-3 py-2 text-gray-900 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500`}
                         />
                         {cardErrors.cardholderName && (
                           <p className="mt-1 text-sm text-red-600 dark:text-red-400">
@@ -812,7 +774,7 @@ export default function Profile() {
                               cardErrors.expiryDate
                                 ? "border-red-300 dark:border-red-600"
                                 : "border-gray-300 dark:border-gray-600"
-                            } dark:bg-gray-800 px-3 py-2 text-gray-900 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500`}
+                            } bg-white dark:bg-gray-800 px-3 py-2 text-gray-900 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500`}
                           />
                           {cardErrors.expiryDate && (
                             <p className="mt-1 text-sm text-red-600 dark:text-red-400">
@@ -844,7 +806,7 @@ export default function Profile() {
                               cardErrors.cvv
                                 ? "border-red-300 dark:border-red-600"
                                 : "border-gray-300 dark:border-gray-600"
-                            } dark:bg-gray-800 px-3 py-2 text-gray-900 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500`}
+                            } bg-white dark:bg-gray-800 px-3 py-2 text-gray-900 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500`}
                           />
                           {cardErrors.cvv && (
                             <p className="mt-1 text-sm text-red-600 dark:text-red-400">
@@ -914,7 +876,7 @@ export default function Profile() {
                       Scan this QR code with your authenticator app and enter the verification code below
                     </p>
                     <div className="flex justify-center mb-4">
-                      {/* This would be a real QR code in production */}
+                      {/* Mock QR code (in a real app this would be from the backend) */}
                       <div className="h-48 w-48 bg-gray-200 dark:bg-gray-600 rounded-md flex items-center justify-center">
                         <span className="text-gray-500 dark:text-gray-400 text-sm">
                           QR Code Placeholder
