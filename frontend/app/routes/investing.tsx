@@ -307,9 +307,12 @@ const prepareChartData = (data: Stock['historicalData'] | undefined, range: Time
     };
   }
   
+  // Store the raw dates to use for tooltips
+  const rawDates = filteredData.map(item => new Date(item.date));
+  
   return {
-    labels: filteredData.map(item => {
-      const date = new Date(item.date);
+    labels: filteredData.map((item, index) => {
+      const date = rawDates[index];
       if (range === '1D') {
         return date.toLocaleTimeString([], { 
           hour: '2-digit', 
@@ -339,7 +342,9 @@ const prepareChartData = (data: Stock['historicalData'] | undefined, range: Time
         pointRadius: range === '1D' ? 2 : 0,
         borderWidth: 2,
       }
-    ]
+    ],
+    // Store the raw dates as metadata for tooltips
+    rawDates: rawDates
   };
 };
 
@@ -383,23 +388,36 @@ export default function Investing() {
         callbacks: {
           label: (context: any) => `$${context.parsed.y.toFixed(2)}`,
           title: (context: any) => {
-            const date = new Date(context[0].label);
-            if (timeRange === '1D') {
-              return date.toLocaleTimeString([], { 
-                hour: '2-digit', 
-                minute: '2-digit',
-                hour12: false 
-              });
-            } else if (timeRange === '1Y') {
+            // Use the rawDates provided in the chart data instead of parsing the label
+            const chart = context[0].chart;
+            const dataIndex = context[0].dataIndex;
+            const rawDates = chart.data.rawDates || [];
+            
+            // If we have a valid date from rawDates, use it
+            if (rawDates[dataIndex]) {
+              const date = rawDates[dataIndex];
+              if (timeRange === '1D') {
+                return date.toLocaleTimeString([], { 
+                  hour: '2-digit', 
+                  minute: '2-digit',
+                  hour12: true 
+                });
+              } else if (timeRange === '1Y') {
+                return date.toLocaleDateString([], { 
+                  month: 'long', 
+                  day: 'numeric',
+                  year: 'numeric'
+                });
+              }
               return date.toLocaleDateString([], { 
-                month: 'short', 
-                year: '2-digit'
+                month: 'long', 
+                day: 'numeric',
+                year: 'numeric'
               });
             }
-            return date.toLocaleDateString([], { 
-              month: 'short', 
-              day: 'numeric' 
-            });
+            
+            // Fallback to label if rawDates is not available
+            return context[0].label;
           }
         }
       }
