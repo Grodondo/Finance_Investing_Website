@@ -1008,17 +1008,17 @@ export default function Investing() {
 
             {/* Trading Form */}
             {selectedStock && (
-              <div className="bg-white dark:bg-dark-surface rounded-lg shadow-sm p-6">
-                <h2 className="text-lg font-medium text-gray-900 dark:text-dark-text mb-4">Trade {selectedStock.symbol}</h2>
-                <form onSubmit={handleOrderSubmit} className="space-y-4">
+              <div className="bg-white dark:bg-dark-surface rounded-lg shadow-sm p-6 mt-6">
+                <h2 className="text-xl font-semibold text-gray-900 dark:text-dark-text mb-6">Trade {selectedStock.symbol}</h2>
+                <form onSubmit={handleOrderSubmit} className="space-y-6">
                   <div className="flex space-x-4">
                     <button
                       type="button"
                       onClick={() => setOrderType('BUY')}
-                      className={`flex-1 py-2 px-4 rounded-md text-sm font-medium ${
+                      className={`flex-1 py-3 px-4 rounded-md text-base font-medium transition-colors ${
                         orderType === 'BUY'
-                          ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300'
-                          : 'bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300'
+                          ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 border-2 border-green-500 dark:border-green-600'
+                          : 'bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 border border-gray-300 dark:border-gray-600'
                       }`}
                     >
                       Buy
@@ -1026,20 +1026,43 @@ export default function Investing() {
                     <button
                       type="button"
                       onClick={() => setOrderType('SELL')}
-                      className={`flex-1 py-2 px-4 rounded-md text-sm font-medium ${
+                      className={`flex-1 py-3 px-4 rounded-md text-base font-medium transition-colors ${
                         orderType === 'SELL'
-                          ? 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300'
-                          : 'bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300'
+                          ? 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300 border-2 border-red-500 dark:border-red-600'
+                          : 'bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 border border-gray-300 dark:border-gray-600'
                       }`}
                     >
                       Sell
                     </button>
                   </div>
-                  <div>
-                    <label htmlFor="quantity" className="block text-sm font-medium text-gray-700 dark:text-gray-300">
-                      Quantity
+                  
+                  {/* Enhanced Quantity Input */}
+                  <div className="bg-gray-50 dark:bg-gray-800 p-5 rounded-lg border border-gray-200 dark:border-gray-700">
+                    <label htmlFor="quantity" className="block text-base font-medium mb-2 text-gray-700 dark:text-gray-300">
+                      Quantity of shares
                     </label>
-                    <div className="mt-1 relative rounded-md shadow-sm">
+                    
+                    {/* Quick quantity buttons */}
+                    <div className="flex space-x-2 mb-3">
+                      {[1, 5, 10, 25, 100].map(qty => (
+                        <button
+                          key={qty}
+                          type="button"
+                          onClick={() => setOrderQuantity(qty)}
+                          className={`py-1 px-3 rounded-md text-xs font-medium border ${
+                            orderQuantity === qty 
+                              ? orderType === 'BUY'
+                                ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 border-green-500 dark:border-green-600'
+                                : 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300 border-red-500 dark:border-red-600'
+                              : 'bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-300 border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-600'
+                          }`}
+                        >
+                          {qty}
+                        </button>
+                      ))}
+                    </div>
+                    
+                    <div className="relative rounded-md shadow-sm">
                       <input
                         type="number"
                         id="quantity"
@@ -1047,45 +1070,57 @@ export default function Investing() {
                         step="0.01"
                         value={orderQuantity}
                         onChange={(e) => setOrderQuantity(Number(e.target.value))}
-                        className="block w-full rounded-md border-gray-300 dark:border-gray-600 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 dark:bg-dark-surface dark:text-dark-text sm:text-sm"
+                        className={`block w-full py-3 px-4 text-xl font-medium rounded-md border ${
+                          orderType === 'BUY'
+                            ? 'border-green-500 dark:border-green-600 focus:border-green-500 focus:ring-green-500'
+                            : 'border-red-500 dark:border-red-600 focus:border-red-500 focus:ring-red-500'
+                        } shadow-sm focus:ring-2 dark:bg-dark-surface dark:text-dark-text`}
                         placeholder="0.00"
                       />
                       <div className="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none">
-                        <span className="text-gray-500 dark:text-gray-400 sm:text-sm">shares</span>
+                        <span className="text-gray-500 dark:text-gray-400 text-base font-medium">shares</span>
+                      </div>
+                    </div>
+                    
+                    {/* Order value preview */}
+                    <div className="mt-3 p-3 bg-white dark:bg-gray-700 rounded-md border border-gray-200 dark:border-gray-600">
+                      <div className="flex justify-between items-center">
+                        <span className="text-sm text-gray-600 dark:text-gray-400">Current price</span>
+                        <span className="text-sm font-medium text-gray-900 dark:text-white">${selectedStock?.currentPrice?.toFixed(2) ?? '0.00'}</span>
+                      </div>
+                      <div className="flex justify-between items-center mt-2 text-base font-semibold">
+                        <span className={orderType === 'BUY' ? 'text-green-700 dark:text-green-400' : 'text-red-700 dark:text-red-400'}>
+                          Total {orderType === 'BUY' ? 'cost' : 'value'}
+                        </span>
+                        <span className={`text-lg ${orderType === 'BUY' ? 'text-green-700 dark:text-green-400' : 'text-red-700 dark:text-red-400'}`}>
+                          ${(orderQuantity * (selectedStock?.currentPrice || 0)).toFixed(2)}
+                        </span>
                       </div>
                     </div>
                   </div>
-                  <div className="space-y-2 text-sm text-gray-600 dark:text-gray-400">
-                    <div className="flex justify-between">
-                      <span>Price per share</span>
-                      <span>${selectedStock?.currentPrice?.toFixed(2) ?? '0.00'}</span>
-                    </div>
-                    <div className="flex justify-between font-medium">
-                      <span>Estimated Total</span>
-                      <span>${(orderQuantity * (selectedStock?.currentPrice || 0)).toFixed(2)}</span>
-                    </div>
-                  </div>
+                  
                   {orderError && (
                     <div className="p-3 bg-red-50 dark:bg-red-900/20 rounded-md">
                       <p className="text-sm text-red-600 dark:text-red-400">{orderError}</p>
                     </div>
                   )}
+                  
                   <button
                     type="submit"
                     disabled={isPlacingOrder || orderQuantity <= 0}
-                    className={`w-full py-2 px-4 rounded-md text-sm font-medium text-white ${
+                    className={`w-full py-3 px-4 rounded-md text-base font-medium text-white ${
                       orderType === 'BUY'
                         ? 'bg-green-600 hover:bg-green-700 dark:bg-green-500 dark:hover:bg-green-400'
                         : 'bg-red-600 hover:bg-red-700 dark:bg-red-500 dark:hover:bg-red-400'
-                    } disabled:opacity-50 disabled:cursor-not-allowed`}
+                    } disabled:opacity-50 disabled:cursor-not-allowed transition-colors`}
                   >
                     {isPlacingOrder ? (
                       <div className="flex items-center justify-center">
-                        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                        <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white mr-2"></div>
                         Processing...
                       </div>
                     ) : (
-                      `${orderType} ${selectedStock.symbol}`
+                      `${orderType} ${orderQuantity > 0 ? orderQuantity : ''} ${orderQuantity === 1 ? 'share' : 'shares'} of ${selectedStock.symbol}`
                     )}
                   </button>
                 </form>
