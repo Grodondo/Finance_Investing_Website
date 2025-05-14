@@ -1,7 +1,8 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
-import { Line } from "react-chartjs-2";
+import { Line, Bar } from "react-chartjs-2";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -95,152 +96,125 @@ interface WatchlistStock {
 }
 
 type SectionId = "portfolio-summary" | "market-overview" | "recent-transactions" | "financial-insights" | "watchlist" | "price-alerts";
+type AuthHeader = { Authorization: string } | null;
 
-export default function Dashboard() {
-  const { user, logout, getAuthHeader, isAuthenticated } = useAuth();
-  const navigate = useNavigate();
-  const [transactions, setTransactions] = useState<Transaction[]>([]);
-  const [insights, setInsights] = useState<FinancialInsights | null>(null);
-  const [watchlist, setWatchlist] = useState<WatchlistStock[]>([]);
-  const [selectedStocks, setSelectedStocks] = useState<string[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [sectionOrder, setSectionOrder] = useState<SectionId[]>([
-    "portfolio-summary",
-    "market-overview",
-    "watchlist",
-    "recent-transactions",
-    "financial-insights",
-    "price-alerts"
-  ]);
-  const [isCompact, setIsCompact] = useState(false);
+interface DashboardData {
+  watchlist: WatchlistStock[] | undefined;
+  transactions: Transaction[] | undefined;
+  insights: FinancialInsights | undefined;
+}
 
-  const colors = ['#FF6384', '#36A2EB', '#FFCE56', '#4BC0C0', '#9966FF', '#FF9F40', '#C9CBCF', '#E57373', '#81C784', '#64B5F6'];
-
-  const fetchWithTimeout = async (url: string, options: RequestInit, timeout = 5000): Promise<Response | null> => {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), timeout);
-
-    try {
-      const response = await fetch(url, {
-        ...options,
-        signal: controller.signal
+const useTransactions = (authHeader: AuthHeader) => {
+  return useQuery({
+    queryKey: ['transactions'],
+    queryFn: async () => {
+      if (!authHeader) return [];
+      const response = await fetch("/api/transactions", {
+        headers: {
+          ...authHeader,
+          "Content-Type": "application/json"
+        }
       });
-      clearTimeout(timeoutId);
-      return response;
-    } catch (error) {
-      clearTimeout(timeoutId);
-      if (error instanceof Error && error.name === 'AbortError') {
-        return null;
-      }
-      throw error;
-    }
-  };
+      if (!response.ok) throw new Error("Failed to fetch transactions");
+      return response.json() as Promise<Transaction[]>;
+    },
+    enabled: !!authHeader,
+    staleTime: 30000,
+  });
+};
 
-  useEffect(() => {
-    if (!isAuthenticated) {
-      navigate("/login");
-      return;
-    }
+const useFinancialInsights = (authHeader: AuthHeader) => {
+  return useQuery({
+    queryKey: ['insights'],
+    queryFn: async () => {
+      if (!authHeader) return null;
+      const response = await fetch("/api/insights", {
+        headers: {
+          ...authHeader,
+          "Content-Type": "application/json"
+        }
+      });
+      if (!response.ok) throw new Error("Failed to fetch insights");
+      return response.json() as Promise<FinancialInsights>;
+    },
+    enabled: !!authHeader,
+    staleTime: 30000,
+  });
+};
 
-    const fetchData = async () => {
-      try {
-        const authHeader = getAuthHeader();
-        if (!authHeader) throw new Error("Not authenticated");
+const useWatchlistWithHistory = (authHeader: AuthHeader) => {
+  return useQuery({
+    queryKey: ['watchlistWithHistory'],
+    queryFn: async () => {
+      if (!authHeader) return [];
+      
+      const watchlistResponse = await fetch("/api/watchlist", {
+        headers: {
+          ...authHeader,
+          "Content-Type": "application/json"
+        }
+      });
+      
+      if (!watchlistResponse.ok) throw new Error("Failed to fetch watchlist");
+      const watchlistData = await watchlistResponse.json();
+      
+      const normalizedWatchlist = watchlistData.map((stock: any) => ({
+        id: stock.id,
+        symbol: stock.symbol,
+        name: stock.name,
+        currentPrice: stock.current_price || 0,
+        change: stock.change || 0,
+        changePercent: stock.change_percent || 0,
+        volume: stock.volume || 0,
+        marketCap: stock.market_cap || 0,
+        sharesOwned: stock.shares_owned || 0,
+        totalValue: stock.total_value || 0,
+        historicalData: []
+      }));
 
-        // Fetch watchlist data
-        const watchlistResponse = await fetchWithTimeout("/api/watchlist", {
-          headers: { ...authHeader, "Content-Type": "application/json" },
-        });
-
-        if (watchlistResponse?.ok) {
-          const watchlistData = await watchlistResponse.json();
-          const normalizedWatchlist = watchlistData.map((stock: any) => ({
-            id: stock.id,
-            symbol: stock.symbol,
-            name: stock.name,
-            currentPrice: stock.current_price || 0,
-            change: stock.change || 0,
-            changePercent: stock.change_percent || 0,
-            volume: stock.volume || 0,
-            marketCap: stock.market_cap || 0,
-            sharesOwned: stock.shares_owned || 0,
-            totalValue: stock.total_value || 0,
-            historicalData: []
-          }));
-
-          // Fetch historical data for each stock
-          const watchlistWithHistory = await Promise.all(
-            normalizedWatchlist.map(async (stock: WatchlistStock) => {
-              try {
-                const response = await fetchWithTimeout(
-                  `/api/stocks/${stock.symbol}`,
-                  {
-                    headers: { ...authHeader, "Content-Type": "application/json" }
-                  }
-                );
-                if (response?.ok) {
-                  const stockData = await response.json();
-                  return {
-                    ...stock,
-                    historicalData: stockData.historical_data?.map((point: any) => ({
-                      date: point.date,
-                      price: point.price,
-                      is_intraday: point.date.includes(' ')
-                    })) || []
-                  };
-                }
-                return stock;
-              } catch {
-                return stock;
+      const watchlistWithHistory = await Promise.all(
+        normalizedWatchlist.map(async (stock: WatchlistStock) => {
+          try {
+            const response = await fetch(`/api/stocks/${stock.symbol}`, {
+              headers: {
+                ...authHeader,
+                "Content-Type": "application/json"
               }
-            })
-          );
-          setWatchlist(watchlistWithHistory);
-          setSelectedStocks(watchlistWithHistory.map(stock => stock.symbol));
-        }
+            });
+            if (response.ok) {
+              const stockData = await response.json();
+              return {
+                ...stock,
+                currentPrice: stockData.current_price || stock.currentPrice,
+                change: stockData.change || stock.change,
+                changePercent: stockData.change_percent || stock.changePercent,
+                volume: stockData.volume || stock.volume,
+                marketCap: stockData.market_cap || stock.marketCap,
+                historicalData: stockData.historical_data?.map((point: any) => ({
+                  date: point.date,
+                  price: point.price,
+                  is_intraday: point.date.includes(' ')
+                })) || []
+              };
+            }
+            return stock;
+          } catch {
+            return stock;
+          }
+        })
+      );
 
-        // Fetch other data
-        const [transactionsResponse, insightsResponse] = await Promise.all([
-          fetchWithTimeout("/api/transactions", {
-            headers: { ...authHeader, "Content-Type": "application/json" },
-          }),
-          fetchWithTimeout("/api/insights", {
-            headers: { ...authHeader, "Content-Type": "application/json" },
-          })
-        ]);
+      return watchlistWithHistory;
+    },
+    enabled: !!authHeader,
+    staleTime: 30000,
+  });
+};
 
-        if (transactionsResponse?.ok) {
-          const transactionsData = await transactionsResponse.json();
-          setTransactions(transactionsData);
-        }
+const COLORS = ['#FF6384', '#36A2EB', '#FFCE56', '#4BC0C0', '#9966FF', '#FF9F40', '#C9CBCF', '#E57373', '#81C784', '#64B5F6'];
 
-        if (insightsResponse?.ok) {
-          const insightsData = await insightsResponse.json();
-          setInsights(insightsData);
-        }
-      } catch (error) {
-        setError(error instanceof Error ? error.message : "An error occurred");
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchData();
-  }, [getAuthHeader, isAuthenticated, navigate]);
-
-  // Add window resize handler for responsive layout
-  useEffect(() => {
-    const handleResize = () => {
-      setIsCompact(window.innerWidth < 1024);
-    };
-    handleResize();
-    window.addEventListener("resize", handleResize);
-    return () => window.removeEventListener("resize", handleResize);
-  }, []);
-
-  // Aggregate transactions by date for chart
-  const dailyData = transactions.reduce<DailyData>((acc, t) => {
+const prepareTransactionsChartData = (transactions: Transaction[]) => {
+  const dailyData = transactions.reduce<Record<string, { income: number; expenses: number }>>((acc, t) => {
     const date = new Date(t.date).toLocaleDateString();
     if (!acc[date]) acc[date] = { income: 0, expenses: 0 };
     if (t.type === "income") acc[date].income += t.amount;
@@ -252,7 +226,7 @@ export default function Dashboard() {
     new Date(a).getTime() - new Date(b).getTime()
   );
 
-  const chartData = {
+  return {
     labels: sortedDates,
     datasets: [
       {
@@ -273,125 +247,198 @@ export default function Dashboard() {
       },
     ],
   };
+};
 
-  const chartOptions: ChartOptions<"line"> = {
-    responsive: true,
-    maintainAspectRatio: false,
-    plugins: {
-      legend: { 
-        display: true, 
-        position: "top" as const 
-      },
-      tooltip: { 
-        mode: "index" as const, 
-        intersect: false 
-      },
-    },
-    scales: {
-      y: { 
-        beginAtZero: true, 
-        grid: { color: "rgba(0, 0, 0, 0.1)" } 
-      },
-      x: { 
-        grid: { display: false }, 
-        ticks: { maxTicksLimit: 10 } 
-      },
-    },
-  };
+const prepareWatchlistChartData = (watchlist: WatchlistStock[] | undefined, selectedStocks: string[]) => {
+  if (!watchlist || watchlist.length === 0 || selectedStocks.length === 0) {
+    return { labels: [], datasets: [] };
+  }
 
-  const onDragEnd = (result: DropResult) => {
+  const now = new Date();
+  const cutoff = new Date(now);
+  cutoff.setDate(now.getDate() - 30);
+
+  const datasets = selectedStocks.map((symbol, index) => {
+    const stock = watchlist.find(s => s.symbol === symbol);
+    if (!stock?.historicalData) return null;
+
+    const filteredData = stock.historicalData.filter(item => new Date(item.date) >= cutoff);
+    const color = COLORS[index % COLORS.length];
+
+    return {
+      label: symbol,
+      data: filteredData.map(item => item.price),
+      borderColor: color,
+      backgroundColor: `${color}20`,
+      fill: true,
+      tension: 0.4,
+      pointRadius: 0,
+      borderWidth: 2
+    };
+  }).filter(dataset => dataset !== null);
+
+  const labels = watchlist[0]?.historicalData
+    ?.filter(item => new Date(item.date) >= cutoff)
+    .map(item => new Date(item.date).toLocaleDateString([], { month: 'short', day: 'numeric' })) || [];
+
+  return { labels, datasets };
+};
+
+const getChartOptions = (timeRange?: string): ChartOptions<"line"> => ({
+  responsive: true,
+  maintainAspectRatio: false,
+  plugins: {
+    legend: { 
+      display: true, 
+      position: "top" as const 
+    },
+    tooltip: { 
+      mode: "index" as const, 
+      intersect: false 
+    },
+  },
+  scales: {
+    y: { 
+      beginAtZero: true, 
+      grid: { color: "rgba(0, 0, 0, 0.1)" } 
+    },
+    x: { 
+      grid: { display: false }, 
+      ticks: { maxTicksLimit: 10 } 
+    },
+  },
+});
+
+const getWatchlistChartOptions = (): ChartOptions<"line"> => ({
+  responsive: true,
+  maintainAspectRatio: false,
+  plugins: {
+    legend: { 
+      display: true, 
+      position: "top" as const,
+      labels: {
+        color: 'rgb(156, 163, 175)',
+        usePointStyle: true,
+        pointStyle: 'circle'
+      }
+    },
+    tooltip: {
+      mode: "index" as const,
+      intersect: false,
+      backgroundColor: 'rgba(17, 24, 39, 0.8)',
+      titleColor: 'rgb(229, 231, 235)',
+      bodyColor: 'rgb(229, 231, 235)',
+      borderColor: 'rgba(75, 85, 99, 0.2)',
+      borderWidth: 1,
+      callbacks: {
+        label: (context: any) => `${context.dataset.label}: $${context.parsed.y.toFixed(2)}`
+      }
+    }
+  },
+  scales: {
+    x: { 
+      grid: { 
+        display: false,
+        color: 'rgba(75, 85, 99, 0.1)'
+      },
+      ticks: {
+        color: 'rgb(156, 163, 175)'
+      }
+    },
+    y: {
+      position: 'right' as const,
+      grid: { 
+        color: 'rgba(75, 85, 99, 0.1)'
+      },
+      ticks: { 
+        color: 'rgb(156, 163, 175)',
+        callback: (value: any) => `$${value.toFixed(2)}`
+      }
+    }
+  }
+});
+
+export default function Dashboard() {
+  const { user, logout, getAuthHeader, isAuthenticated } = useAuth();
+  const navigate = useNavigate();
+  const queryClient = useQueryClient();
+  const [selectedStocks, setSelectedStocks] = useState<string[]>([]);
+  const [sectionOrder, setSectionOrder] = useState<SectionId[]>([
+    "portfolio-summary",
+    "market-overview",
+    "watchlist",
+    "recent-transactions",
+    "financial-insights",
+    "price-alerts"
+  ]);
+  const [isCompact, setIsCompact] = useState(false);
+
+  const authHeader = useMemo(() => getAuthHeader() as AuthHeader, [getAuthHeader]);
+
+  const { 
+    data: transactions, 
+    isLoading: isTransactionsLoading,
+    error: transactionsError 
+  } = useTransactions(authHeader);
+
+  const { 
+    data: insights, 
+    isLoading: isInsightsLoading,
+    error: insightsError 
+  } = useFinancialInsights(authHeader);
+
+  const { 
+    data: watchlist,
+    isLoading: isWatchlistLoading,
+    error: watchlistError 
+  } = useWatchlistWithHistory(authHeader);
+
+  const transactionsChartData = useMemo(() => {
+    if (!transactions) return { labels: [], datasets: [] };
+    return prepareTransactionsChartData(transactions);
+  }, [transactions]);
+
+  const watchlistChartData = useMemo(() => {
+    if (!watchlist) return { labels: [], datasets: [] };
+    return prepareWatchlistChartData(watchlist, selectedStocks);
+  }, [watchlist, selectedStocks]);
+
+  const chartOptions = useMemo(() => getChartOptions(), []);
+  const watchlistChartOptions = useMemo(() => getWatchlistChartOptions(), []);
+
+  const onDragEnd = useCallback((result: DropResult) => {
     if (!result.destination) return;
     const items = Array.from(sectionOrder);
     const [reorderedItem] = items.splice(result.source.index, 1);
     items.splice(result.destination.index, 0, reorderedItem);
     setSectionOrder(items as SectionId[]);
-  };
+  }, [sectionOrder]);
 
-  const prepareWatchlistChartData = (watchlist: WatchlistStock[], selectedStocks: string[]) => {
-    if (watchlist.length === 0 || selectedStocks.length === 0) {
-      return { labels: [], datasets: [] };
+  useEffect(() => {
+    const handleResize = () => {
+      setIsCompact(window.innerWidth < 1024);
+    };
+    handleResize();
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, []);
+
+  useEffect(() => {
+    if (!isAuthenticated) {
+      navigate("/login");
     }
+  }, [isAuthenticated, navigate]);
 
-    const now = new Date();
-    const cutoff = new Date(now);
-    cutoff.setDate(now.getDate() - 30);
-
-    const datasets = selectedStocks.map((symbol, index) => {
-      const stock = watchlist.find(s => s.symbol === symbol);
-      if (!stock?.historicalData) return null;
-
-      const filteredData = stock.historicalData.filter(item => new Date(item.date) >= cutoff);
-      const color = colors[index % colors.length];
-
-      return {
-        label: symbol,
-        data: filteredData.map(item => item.price),
-        borderColor: color,
-        backgroundColor: `${color}20`,
-        fill: true,
-        tension: 0.4,
-        pointRadius: 0,
-        borderWidth: 2
-      };
-    }).filter(dataset => dataset !== null);
-
-    const labels = watchlist[0]?.historicalData
-      ?.filter(item => new Date(item.date) >= cutoff)
-      .map(item => new Date(item.date).toLocaleDateString([], { month: 'short', day: 'numeric' })) || [];
-
-    return { labels, datasets };
-  };
-
-  const watchlistChartOptions: ChartOptions<"line"> = {
-    responsive: true,
-    maintainAspectRatio: false,
-    plugins: {
-      legend: { 
-        display: true, 
-        position: "top" as const,
-        labels: {
-          color: 'rgb(156, 163, 175)',
-          usePointStyle: true,
-          pointStyle: 'circle'
-        }
-      },
-      tooltip: {
-        mode: "index" as const,
-        intersect: false,
-        backgroundColor: 'rgba(17, 24, 39, 0.8)',
-        titleColor: 'rgb(229, 231, 235)',
-        bodyColor: 'rgb(229, 231, 235)',
-        borderColor: 'rgba(75, 85, 99, 0.2)',
-        borderWidth: 1,
-        callbacks: {
-          label: (context: any) => `${context.dataset.label}: $${context.parsed.y.toFixed(2)}`
-        }
-      }
-    },
-    scales: {
-      x: { 
-        grid: { 
-          display: false,
-          color: 'rgba(75, 85, 99, 0.1)'
-        },
-        ticks: {
-          color: 'rgb(156, 163, 175)'
-        }
-      },
-      y: {
-        position: 'right' as const,
-        grid: { 
-          color: 'rgba(75, 85, 99, 0.1)'
-        },
-        ticks: { 
-          color: 'rgb(156, 163, 175)',
-          callback: (value: any) => `$${value.toFixed(2)}`
-        }
-      }
+  useEffect(() => {
+    if (watchlist && watchlist.length > 0) {
+      setSelectedStocks(watchlist.map(stock => stock.symbol));
     }
-  };
+  }, [watchlist]);
 
-  if (loading) return (
+  const isLoading = isTransactionsLoading || isInsightsLoading || isWatchlistLoading;
+  const error = transactionsError || insightsError || watchlistError;
+
+  if (isLoading) return (
     <div className="min-h-screen pt-16 flex items-center justify-center">
       <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600"></div>
     </div>
@@ -401,7 +448,9 @@ export default function Dashboard() {
     <div className="min-h-screen pt-16 flex items-center justify-center">
       <div className="bg-white p-8 rounded-lg shadow-md max-w-md w-full">
         <h2 className="text-2xl font-bold text-red-600 mb-4">Error</h2>
-        <p className="text-gray-600 mb-4">{error}</p>
+        <p className="text-gray-600 mb-4">
+          {error instanceof Error ? error.message : "An error occurred"}
+        </p>
         <button
           onClick={() => window.location.reload()}
           className="w-full bg-indigo-600 text-white py-2 px-4 rounded-md hover:bg-indigo-700"
@@ -414,7 +463,6 @@ export default function Dashboard() {
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
-      {/* Header with key metrics */}
       <header className="pt-16 bg-white dark:bg-gray-800 shadow-sm border-b border-gray-200 dark:border-gray-700">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
           <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between">
@@ -505,7 +553,7 @@ export default function Dashboard() {
                           {sectionId === "portfolio-summary" && (
                             <div className="space-y-6">
                               <div className="h-80">
-                                <Line data={chartData} options={chartOptions} />
+                                <Line data={transactionsChartData} options={chartOptions} />
                               </div>
                               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                                 <div className="bg-green-50 dark:bg-green-900/20 p-4 rounded-lg">
@@ -545,7 +593,6 @@ export default function Dashboard() {
                           )}
                           {sectionId === "market-overview" && (
                             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                              {/* Market overview cards */}
                               <div className="bg-gray-50 dark:bg-gray-700 p-4 rounded-lg">
                                 <h3 className="text-sm font-medium text-gray-900 dark:text-white">S&P 500</h3>
                                 <div className="mt-2 flex items-center justify-between">
@@ -553,7 +600,6 @@ export default function Dashboard() {
                                   <span className="text-sm text-green-600">+1.2%</span>
                                 </div>
                               </div>
-                              {/* Add more market cards */}
                             </div>
                           )}
                           {sectionId === "watchlist" && (
@@ -569,7 +615,7 @@ export default function Dashboard() {
                                         <div className="flex items-center space-x-2 mb-2">
                                           <div 
                                             className="w-3 h-3 rounded-full" 
-                                            style={{ backgroundColor: colors[index % colors.length] }}
+                                            style={{ backgroundColor: COLORS[index % COLORS.length] }}
                                           />
                                           <input
                                             type="checkbox"
@@ -608,7 +654,7 @@ export default function Dashboard() {
                                   </div>
                                   <div className="h-[400px] bg-gray-50 dark:bg-gray-700 rounded-lg p-4">
                                     <Line
-                                      data={prepareWatchlistChartData(watchlist, selectedStocks)}
+                                      data={watchlistChartData}
                                       options={watchlistChartOptions}
                                     />
                                   </div>
