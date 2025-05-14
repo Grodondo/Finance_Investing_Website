@@ -1,3 +1,11 @@
 BACKEND
-http://localhost:8080 -> Adminer 
 http://localhost:5050 -> pgAdmin 
+	Email: admin@admin.com
+	Password: admin
+
+	Host: db (this is the service name in Docker)
+	Port: 5432
+	Database: finance_db
+	Username: postgres
+	Password: postgres
+

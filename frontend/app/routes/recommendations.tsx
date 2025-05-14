@@ -105,6 +105,7 @@ export default function Recommendations() {
   const [isLoadingStock, setIsLoadingStock] = useState(false);
   const [stockError, setStockError] = useState<string | null>(null);
   const [isPageLoaded, setIsPageLoaded] = useState(false);
+  const [sortedDates, setSortedDates] = useState<string[]>([]);
 
   const colors = ['#FF6384', '#36A2EB', '#FFCE56', '#4BC0C0', '#9966FF', '#FF9F40', '#C9CBCF', '#E57373', '#81C784', '#64B5F6'];
 
@@ -257,6 +258,58 @@ export default function Recommendations() {
     fetchRecommendations();
   }, [isPageLoaded, getAuthHeader, isAuthenticated]);
 
+  // Add useEffect to process dates when watchlist or selected stocks change
+  useEffect(() => {
+    if (watchlist.length === 0 || selectedStocks.length === 0) {
+      setSortedDates([]);
+      return;
+    }
+
+    // Set the end date to today at the start of the day
+    const endDate = new Date();
+    endDate.setHours(0, 0, 0, 0);
+
+    // Set the start date to exactly one year before today
+    const startDate = new Date(endDate);
+    startDate.setFullYear(endDate.getFullYear() - 1);
+
+    // Get all unique dates from all selected stocks
+    const allDates = new Set<string>();
+    selectedStocks.forEach(symbol => {
+      const stock = watchlist.find(s => s.symbol === symbol);
+      if (stock?.historicalData) {
+        stock.historicalData
+          .filter(item => {
+            const itemDate = new Date(item.date);
+            itemDate.setHours(0, 0, 0, 0); // Normalize the item date to start of day
+            return itemDate >= startDate && itemDate <= endDate && !item.is_intraday;
+          })
+          .forEach(item => allDates.add(item.date));
+      }
+    });
+
+    // Sort dates chronologically
+    const newSortedDates = Array.from(allDates).sort((a, b) => new Date(a).getTime() - new Date(b).getTime());
+    
+    // Ensure we have data points at the start and end of our range
+    if (newSortedDates.length > 0) {
+      const firstDate = new Date(newSortedDates[0]);
+      const lastDate = new Date(newSortedDates[newSortedDates.length - 1]);
+      
+      // If we don't have data at the start date, add it
+      if (firstDate > startDate) {
+        newSortedDates.unshift(startDate.toISOString().split('T')[0]);
+      }
+      
+      // If we don't have data at the end date, add it
+      if (lastDate < endDate) {
+        newSortedDates.push(endDate.toISOString().split('T')[0]);
+      }
+    }
+
+    setSortedDates(newSortedDates);
+  }, [watchlist, selectedStocks]);
+
   const handleStockSelect = (symbol: string) => {
     fetchStockData(symbol);
   };
@@ -370,61 +423,153 @@ export default function Recommendations() {
   };
 
   const prepareChartData = (watchlist: Watchlist[], selectedStocks: string[], range: TimeRange) => {
-    if (watchlist.length === 0 || selectedStocks.length === 0) {
-      return { labels: [], datasets: [] };
+    if (watchlist.length === 0 || selectedStocks.length === 0 || sortedDates.length === 0) {
+      return { labels: [], datasets: [], options: {} };
     }
-    const firstStock = watchlist.find(stock => selectedStocks.includes(stock.symbol));
-    if (!firstStock || !firstStock.historicalData) {
-      return { labels: [], datasets: [] };
-    }
-    const now = new Date();
-    const cutoff = new Date(now);
-    cutoff.setDate(now.getDate() - 30);
-    const filteredData = firstStock.historicalData.filter(item => new Date(item.date) >= cutoff);
-    const labels = filteredData.map(item => new Date(item.date).toLocaleDateString([], { month: 'short', day: 'numeric' }));
 
+    // Set the end date to today at the start of the day
+    const endDate = new Date();
+    endDate.setHours(0, 0, 0, 0);
+
+    // Set the start date to exactly one year before today
+    const startDate = new Date(endDate);
+    startDate.setFullYear(endDate.getFullYear() - 1);
+
+    // Use all dates instead of sampling
+    const sampledDates = sortedDates;
+
+    // Create datasets for each selected stock
     const datasets = selectedStocks.map((symbol, index) => {
       const stock = watchlist.find(s => s.symbol === symbol);
-      if (!stock || !stock.historicalData) return null;
+      if (!stock?.historicalData) return null;
+
       const color = colors[index % colors.length];
+      
+      // Create a map of date to price for quick lookup
+      const priceMap = new Map(
+        stock.historicalData
+          .filter(item => {
+            const itemDate = new Date(item.date);
+            itemDate.setHours(0, 0, 0, 0);
+            return itemDate >= startDate && itemDate <= endDate && !item.is_intraday;
+          })
+          .map(item => [item.date, item.price])
+      );
+
+      // Create data points for all dates, using null for missing data points
+      const data = sampledDates.map(date => priceMap.get(date) ?? null);
+
       return {
         label: symbol,
-        data: stock.historicalData
-          .filter(item => new Date(item.date) >= cutoff)
-          .map(item => item.price),
+        data,
         borderColor: color,
         backgroundColor: `${color}20`,
         fill: false,
-        tension: 0.4,
-        pointRadius: 0,
-        borderWidth: 2
+        tension: 0, // No smoothing to show actual price movements
+        pointRadius: 1, // Smaller points to avoid overcrowding
+        pointHoverRadius: 4, // Larger points on hover
+        pointBackgroundColor: color,
+        pointBorderColor: color,
+        borderWidth: 1, // Thinner lines to show more detail
+        spanGaps: true,
+        showLine: true
       };
     }).filter(dataset => dataset !== null);
 
-    return { labels, datasets };
-  };
+    // Create labels from all dates
+    const oneMonthAgo = new Date(endDate);
+    oneMonthAgo.setMonth(endDate.getMonth() - 1);
 
-  const chartOptions = {
-    responsive: true,
-    maintainAspectRatio: false,
-    plugins: {
-      legend: { display: true, position: 'top' as const },
-      tooltip: {
+    const labels = sampledDates.map(date => {
+      const dateObj = new Date(date);
+      dateObj.setHours(0, 0, 0, 0);
+      if (dateObj > oneMonthAgo) {
+        return dateObj.toLocaleDateString([], { month: 'short', day: 'numeric' });
+      }
+      return dateObj.toLocaleDateString([], { month: 'short', year: '2-digit' });
+    });
+
+    const chartOptions = {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: {
         mode: 'index' as const,
         intersect: false,
-        callbacks: {
-          label: (context: any) => `${context.dataset.label}: $${context.parsed.y.toFixed(2)}`
+      },
+      plugins: {
+        legend: { 
+          display: true, 
+          position: 'top' as const,
+          labels: {
+            usePointStyle: true,
+            pointStyle: 'circle',
+            padding: 20
+          }
+        },
+        tooltip: {
+          mode: 'index' as const,
+          intersect: false,
+          callbacks: {
+            label: (context: any) => {
+              const value = context.parsed.y;
+              if (value === null) return `${context.dataset.label}: No data`;
+              return `${context.dataset.label}: $${value.toFixed(2)}`;
+            },
+            title: (context: any) => {
+              const dataIndex = context[0].dataIndex;
+              const date = new Date(sampledDates[dataIndex]);
+              return date.toLocaleDateString([], { 
+                weekday: 'long',
+                year: 'numeric',
+                month: 'long',
+                day: 'numeric'
+              });
+            }
+          }
+        }
+      },
+      scales: {
+        x: { 
+          grid: { 
+            display: true,
+            color: 'rgba(156, 163, 175, 0.1)',
+            drawBorder: false
+          },
+          ticks: {
+            maxRotation: 45,
+            minRotation: 45,
+            autoSkip: true,
+            maxTicksLimit: 20, // Show more date labels
+            font: {
+              size: 10 // Slightly smaller font to fit more labels
+            },
+            callback: (value: any, index: number) => {
+              const date = new Date(sampledDates[index]);
+              if (date > oneMonthAgo) {
+                return date.toLocaleDateString([], { month: 'short', day: 'numeric' });
+              }
+              return date.toLocaleDateString([], { month: 'short', year: '2-digit' });
+            }
+          }
+        },
+        y: {
+          position: 'right' as const,
+          grid: { 
+            color: 'rgba(156, 163, 175, 0.1)',
+            drawBorder: false
+          },
+          ticks: { 
+            callback: (value: any) => `$${value.toFixed(2)}`,
+            font: {
+              size: 10
+            },
+            maxTicksLimit: 10 // Limit y-axis ticks to prevent overcrowding
+          }
         }
       }
-    },
-    scales: {
-      x: { grid: { display: false } },
-      y: {
-        position: 'right' as const,
-        grid: { color: 'rgba(156, 163, 175, 0.1)' },
-        ticks: { callback: (value: any) => `$${value.toFixed(2)}` }
-      }
-    }
+    };
+
+    return { labels, datasets, options: chartOptions };
   };
 
   if (loading) return (
@@ -492,7 +637,7 @@ export default function Recommendations() {
                 <div className="h-[500px]">
                   <Line
                     data={prepareChartData(watchlist, selectedStocks, timeRange)}
-                    options={chartOptions}
+                    options={prepareChartData(watchlist, selectedStocks, timeRange).options}
                   />
                 </div>
               ) : (
