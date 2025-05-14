@@ -4,6 +4,8 @@ interface User {
   id: string;
   email: string;
   name: string;
+  profilePicture?: string;
+  is2FAEnabled?: boolean;
 }
 
 interface AuthContextType {
@@ -13,6 +15,7 @@ interface AuthContextType {
   logout: () => void;
   loading: boolean;
   getAuthHeader: () => { Authorization: string } | undefined;
+  updateUserProfile: (userData: Partial<User>) => void;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -110,6 +113,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return { Authorization: `Bearer ${token}` };
   };
 
+  const updateUserProfile = (userData: Partial<User>) => {
+    if (user) {
+      setUser({ ...user, ...userData });
+    }
+  };
+
   return (
     <AuthContext.Provider
       value={{
@@ -119,6 +128,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         logout,
         loading,
         getAuthHeader,
+        updateUserProfile,
       }}
     >
       {children}

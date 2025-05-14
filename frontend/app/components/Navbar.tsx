@@ -1,13 +1,14 @@
 import { Link, useLocation } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
 import { useState, useEffect } from "react";
-import { Bars3Icon, XMarkIcon } from "@heroicons/react/24/outline";
+import { Bars3Icon, XMarkIcon, UserCircleIcon } from "@heroicons/react/24/outline";
 
 export default function Navbar() {
   const { user, logout } = useAuth();
   const location = useLocation();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isScrolled, setIsScrolled] = useState(false);
+  const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false);
 
   // Handle scroll effect
   useEffect(() => {
@@ -21,7 +22,30 @@ export default function Navbar() {
   // Close mobile menu when route changes
   useEffect(() => {
     setIsMobileMenuOpen(false);
+    setIsProfileMenuOpen(false);
   }, [location]);
+
+  // Close profile menu when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      const profileMenu = document.getElementById('profile-menu');
+      const profileButton = document.getElementById('profile-button');
+      
+      if (
+        profileMenu && 
+        profileButton && 
+        !profileMenu.contains(event.target as Node) && 
+        !profileButton.contains(event.target as Node)
+      ) {
+        setIsProfileMenuOpen(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, []);
 
   const isActive = (path: string) => {
     return location.pathname === path;
@@ -108,12 +132,48 @@ export default function Navbar() {
                 <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
                   Welcome, {user.name}
                 </span>
-                <button
-                  onClick={logout}
-                  className="px-4 py-2 rounded-md text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 dark:bg-indigo-500 dark:hover:bg-indigo-400 transition-colors duration-200 shadow-sm"
-                >
-                  Sign Out
-                </button>
+                <div className="relative">
+                  <button 
+                    id="profile-button"
+                    className="flex items-center space-x-2 focus:outline-none"
+                    onClick={() => setIsProfileMenuOpen(!isProfileMenuOpen)}
+                  >
+                    <div className="h-8 w-8 rounded-full bg-indigo-100 dark:bg-indigo-900 overflow-hidden">
+                      {user.profilePicture ? (
+                        <img 
+                          src={user.profilePicture} 
+                          alt={user.name} 
+                          className="h-full w-full object-cover"
+                        />
+                      ) : (
+                        <UserCircleIcon className="h-full w-full text-indigo-600 dark:text-indigo-400" />
+                      )}
+                    </div>
+                    <span className="sr-only">Open user menu</span>
+                  </button>
+
+                  {isProfileMenuOpen && (
+                    <div 
+                      id="profile-menu"
+                      className="origin-top-right absolute right-0 mt-2 w-48 rounded-md shadow-lg bg-white dark:bg-gray-800 ring-1 ring-black ring-opacity-5 focus:outline-none"
+                    >
+                      <div className="py-1">
+                        <Link
+                          to="/profile"
+                          className="block px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
+                        >
+                          Your Profile
+                        </Link>
+                        <button
+                          onClick={logout}
+                          className="block w-full text-left px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
+                        >
+                          Sign Out
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
               </div>
             )}
           </div>
@@ -139,17 +199,43 @@ export default function Navbar() {
           </Link>
           {user && (
             <div className="pt-4 pb-3 border-t border-gray-200 dark:border-gray-700">
-              <div className="px-4 py-2">
-                <p className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                  Welcome, {user.name}
-                </p>
+              <div className="flex items-center px-4 py-2">
+                <div className="flex-shrink-0 mr-3">
+                  <div className="h-10 w-10 rounded-full bg-indigo-100 dark:bg-indigo-900 overflow-hidden">
+                    {user.profilePicture ? (
+                      <img 
+                        src={user.profilePicture} 
+                        alt={user.name} 
+                        className="h-full w-full object-cover"
+                      />
+                    ) : (
+                      <UserCircleIcon className="h-full w-full text-indigo-600 dark:text-indigo-400" />
+                    )}
+                  </div>
+                </div>
+                <div>
+                  <p className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                    {user.name}
+                  </p>
+                  <p className="text-xs text-gray-500 dark:text-gray-400">
+                    {user.email}
+                  </p>
+                </div>
               </div>
-              <button
-                onClick={logout}
-                className="w-full mt-2 px-4 py-2 rounded-md text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 dark:bg-indigo-500 dark:hover:bg-indigo-400 transition-colors duration-200"
-              >
-                Sign Out
-              </button>
+              <div className="mt-3 space-y-1 px-2">
+                <Link
+                  to="/profile"
+                  className="block px-4 py-2 text-base font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-md"
+                >
+                  Your Profile
+                </Link>
+                <button
+                  onClick={logout}
+                  className="w-full text-left px-4 py-2 text-base font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-md"
+                >
+                  Sign Out
+                </button>
+              </div>
             </div>
           )}
         </div>
