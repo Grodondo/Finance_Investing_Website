@@ -126,18 +126,19 @@ async def get_stock_data(symbol: str, db: Session) -> StockDetail:
         
         try:
             # Fetch intraday data for 1-day view with 5-minute intervals
-            intraday_hist = ticker.history(period="1d", interval="5m")
+            # First try to get 2 days of data to ensure we have enough points
+            intraday_hist = ticker.history(period="2d", interval="5m")
             logger.info(f"Intraday data shape: {intraday_hist.shape if not intraday_hist.empty else 'Empty'}")
             
             if intraday_hist.empty:
                 logger.warning(f"No intraday data available for {symbol}")
                 # Try 1-hour interval as fallback
-                intraday_hist = ticker.history(period="1d", interval="1h")
+                intraday_hist = ticker.history(period="2d", interval="1h")
                 logger.info(f"1-hour interval data shape: {intraday_hist.shape if not intraday_hist.empty else 'Empty'}")
                 
                 if intraday_hist.empty:
                     # If still no data, try 1-day interval - at least we'll have one point for today
-                    intraday_hist = ticker.history(period="1d", interval="1d")
+                    intraday_hist = ticker.history(period="2d", interval="1d")
                     logger.info(f"1-day interval data shape: {intraday_hist.shape if not intraday_hist.empty else 'Empty'}")
             
             # Get 5-year daily data - try different approaches for reliability
@@ -184,6 +185,11 @@ async def get_stock_data(symbol: str, db: Session) -> StockDetail:
         # Process intraday data (for 1D view)
         if not intraday_hist.empty:
             logger.info(f"Processing {len(intraday_hist)} intraday data points")
+            # Filter to only include today's data
+            today = datetime.now().date()
+            intraday_hist = intraday_hist[intraday_hist.index.date == today]
+            logger.info(f"Filtered to {len(intraday_hist)} intraday data points for today")
+            
             for date, row in intraday_hist.iterrows():
                 try:
                     # Format includes time for intraday data
@@ -248,42 +254,25 @@ async def get_stock_data(symbol: str, db: Session) -> StockDetail:
                 logger.info(f"Updated existing stock record for {symbol}")
             else:
                 db_stock = Stock(**{k: v for k, v in stock_data.items() if k not in ['historical_data', 'last_updated']})
-                db_stock.last_updated = current_time
                 db.add(db_stock)
                 logger.info(f"Created new stock record for {symbol}")
             
             db.commit()
-            db.refresh(db_stock)
+            logger.info(f"Database updated successfully for {symbol}")
         except Exception as e:
-            logger.error(f"Database error for {symbol}: {str(e)}")
             db.rollback()
+            logger.error(f"Error updating database for {symbol}: {str(e)}")
             raise HTTPException(
                 status_code=500,
-                detail=f"Database error: {str(e)}"
+                detail=f"Error updating database: {str(e)}"
             )
         
-        # Create StockDetail with database ID and historical data
-        try:
-            stock_detail = StockDetail(
-                id=db_stock.id,
-                **stock_data
-            )
-            logger.info(f"Successfully created StockDetail for {symbol} with {len(stock_detail.historical_data)} historical data points")
-            return stock_detail
-        except Exception as e:
-            logger.error(f"Error creating StockDetail for {symbol}: {str(e)}")
-            raise HTTPException(
-                status_code=500,
-                detail=f"Error creating stock detail: {str(e)}"
-            )
-        
-    except HTTPException:
-        raise
+        return StockDetail(**stock_data)
     except Exception as e:
-        logger.error(f"Unexpected error fetching stock data for {symbol}: {str(e)}")
+        logger.error(f"Error in get_stock_data for {symbol}: {str(e)}")
         raise HTTPException(
             status_code=500,
-            detail=f"Unexpected error: {str(e)}"
+            detail=f"Error fetching stock data: {str(e)}"
         )
 
 @router.get("/stocks/search", response_model=List[StockSearchResult])
