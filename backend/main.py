@@ -9,7 +9,7 @@ from app.db.database import engine, Base
 
 # Configure logging
 logging.basicConfig(
-    level=logging.WARNING,
+    level=logging.DEBUG,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     handlers=[
         logging.StreamHandler()  # This will print to console
@@ -52,11 +52,13 @@ from app.routes.auth import router as auth_router
 from app.routes.transactions import router as transactions_router
 from app.routes.insights import router as insights_router
 from app.routes.investing import router as investing_router
+from app.routes.news import router as news_router
 
 app.include_router(auth_router, prefix="/api/auth", tags=["auth"])
 app.include_router(transactions_router, prefix="/api", tags=["transactions"])
 app.include_router(insights_router, prefix="/api", tags=["insights"])
 app.include_router(investing_router, prefix="/api", tags=["investing"])
+app.include_router(news_router, prefix="/api/news", tags=["news"])
 
 @app.get("/")
 async def root():

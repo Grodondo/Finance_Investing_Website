@@ -782,15 +782,96 @@ async def get_market_news(
             try:
                 ticker_news = ticker.news
                 if ticker_news:
+                    # Log the entire first news item for debugging
+                    logger.debug(f"Raw news data for {ticker_symbol}: {ticker_news[0]}")
+                    
                     for item in ticker_news:
                         try:
+                            # Log the raw item for debugging
+                            logger.debug(f"Processing news item for {ticker_symbol}: {item}")
+                            
+                            # Extract fields with fallbacks
+                            # Handle the new nested structure where content contains the actual news data
+                            if 'content' in item:
+                                # New structure
+                                content = item['content']
+                                title = content.get('title')
+                                
+                                # Publisher is now in provider.displayName
+                                publisher = None
+                                if 'provider' in content and isinstance(content['provider'], dict):
+                                    publisher = content['provider'].get('displayName')
+                                
+                                # URL is now in canonicalUrl.url or clickThroughUrl.url
+                                link = None
+                                if 'canonicalUrl' in content and isinstance(content['canonicalUrl'], dict):
+                                    link = content['canonicalUrl'].get('url')
+                                elif 'clickThroughUrl' in content and isinstance(content['clickThroughUrl'], dict):
+                                    link = content['clickThroughUrl'].get('url')
+                                
+                                # Published date is now in pubDate or displayTime
+                                if 'pubDate' in content:
+                                    published_date = datetime.fromisoformat(content['pubDate'].replace('Z', '+00:00'))
+                                elif 'displayTime' in content:
+                                    published_date = datetime.fromisoformat(content['displayTime'].replace('Z', '+00:00'))
+                                else:
+                                    published_date = datetime.utcnow()
+                                
+                                # Summary is now directly in content
+                                summary = content.get('summary')
+                                
+                                # Thumbnail handling is similar but nested in content
+                                thumbnail = None
+                                if 'thumbnail' in content and isinstance(content['thumbnail'], dict):
+                                    resolutions = content['thumbnail'].get('resolutions', [])
+                                    if resolutions and isinstance(resolutions, list) and len(resolutions) > 0:
+                                        thumbnail = resolutions[0].get('url')
+                            else:
+                                # Old structure (keep as fallback)
+                                title = item.get('title') or item.get('headline') or None
+                                publisher = item.get('publisher') or item.get('source') or None
+                                link = item.get('link') or item.get('url') or None
+                                
+                                # Get published date with fallback
+                                published_date = None
+                                if 'providerPublishTime' in item:
+                                    published_date = datetime.fromtimestamp(item['providerPublishTime'])
+                                elif 'publishedAt' in item:
+                                    published_date = datetime.fromtimestamp(item['publishedAt'])
+                                else:
+                                    published_date = datetime.utcnow()
+                                
+                                # Get thumbnail with fallback
+                                thumbnail = None
+                                if 'thumbnail' in item and isinstance(item['thumbnail'], dict):
+                                    resolutions = item['thumbnail'].get('resolutions', [])
+                                    if resolutions and isinstance(resolutions, list) and len(resolutions) > 0:
+                                        thumbnail = resolutions[0].get('url')
+                                        
+                                summary = item.get('summary')
+                            
+                            # Skip items with missing required fields
+                            if not all([title, publisher, link]):
+                                logger.warning(f"Skipping news item with missing required fields for {ticker_symbol}")
+                                continue
+                            
+                            # Ensure all required fields are strings
+                            title = str(title).strip()
+                            publisher = str(publisher).strip()
+                            link = str(link).strip()
+                            
+                            # Double check after string conversion
+                            if not all([title, publisher, link]):
+                                logger.warning(f"Skipping news item with invalid string fields for {ticker_symbol}")
+                                continue
+                            
                             news_items.append(NewsItem(
-                                title=item.get('title'),
-                                publisher=item.get('publisher'),
-                                link=item.get('link'),
-                                published_date=datetime.fromtimestamp(item.get('providerPublishTime', 0)),
-                                summary=item.get('summary'),
-                                thumbnail=item.get('thumbnail', {}).get('resolutions', [{}])[0].get('url'),
+                                title=title,
+                                publisher=publisher,
+                                link=link,
+                                published_date=published_date,
+                                summary=summary,
+                                thumbnail=thumbnail,
                                 related_symbols=item.get('relatedTickers', [])
                             ))
                         except Exception as e:
@@ -878,15 +959,96 @@ async def get_watchlist_news(
                 
                 stock_news = []
                 if ticker_news:
+                    # Log the entire first news item for debugging
+                    logger.debug(f"Raw news data for {symbol}: {ticker_news[0]}")
+                    
                     for item in ticker_news:
                         try:
+                            # Log the raw item for debugging
+                            logger.debug(f"Processing news item for {symbol}: {item}")
+                            
+                            # Extract fields with fallbacks
+                            # Handle the new nested structure where content contains the actual news data
+                            if 'content' in item:
+                                # New structure
+                                content = item['content']
+                                title = content.get('title')
+                                
+                                # Publisher is now in provider.displayName
+                                publisher = None
+                                if 'provider' in content and isinstance(content['provider'], dict):
+                                    publisher = content['provider'].get('displayName')
+                                
+                                # URL is now in canonicalUrl.url or clickThroughUrl.url
+                                link = None
+                                if 'canonicalUrl' in content and isinstance(content['canonicalUrl'], dict):
+                                    link = content['canonicalUrl'].get('url')
+                                elif 'clickThroughUrl' in content and isinstance(content['clickThroughUrl'], dict):
+                                    link = content['clickThroughUrl'].get('url')
+                                
+                                # Published date is now in pubDate or displayTime
+                                if 'pubDate' in content:
+                                    published_date = datetime.fromisoformat(content['pubDate'].replace('Z', '+00:00'))
+                                elif 'displayTime' in content:
+                                    published_date = datetime.fromisoformat(content['displayTime'].replace('Z', '+00:00'))
+                                else:
+                                    published_date = datetime.utcnow()
+                                
+                                # Summary is now directly in content
+                                summary = content.get('summary')
+                                
+                                # Thumbnail handling is similar but nested in content
+                                thumbnail = None
+                                if 'thumbnail' in content and isinstance(content['thumbnail'], dict):
+                                    resolutions = content['thumbnail'].get('resolutions', [])
+                                    if resolutions and isinstance(resolutions, list) and len(resolutions) > 0:
+                                        thumbnail = resolutions[0].get('url')
+                            else:
+                                # Old structure (keep as fallback)
+                                title = item.get('title') or item.get('headline') or None
+                                publisher = item.get('publisher') or item.get('source') or None
+                                link = item.get('link') or item.get('url') or None
+                                
+                                # Get published date with fallback
+                                published_date = None
+                                if 'providerPublishTime' in item:
+                                    published_date = datetime.fromtimestamp(item['providerPublishTime'])
+                                elif 'publishedAt' in item:
+                                    published_date = datetime.fromtimestamp(item['publishedAt'])
+                                else:
+                                    published_date = datetime.utcnow()
+                                
+                                # Get thumbnail with fallback
+                                thumbnail = None
+                                if 'thumbnail' in item and isinstance(item['thumbnail'], dict):
+                                    resolutions = item['thumbnail'].get('resolutions', [])
+                                    if resolutions and isinstance(resolutions, list) and len(resolutions) > 0:
+                                        thumbnail = resolutions[0].get('url')
+                                        
+                                summary = item.get('summary')
+                            
+                            # Skip items with missing required fields
+                            if not all([title, publisher, link]):
+                                logger.warning(f"Skipping news item with missing required fields for {symbol}")
+                                continue
+                            
+                            # Ensure all required fields are strings
+                            title = str(title).strip()
+                            publisher = str(publisher).strip()
+                            link = str(link).strip()
+                            
+                            # Double check after string conversion
+                            if not all([title, publisher, link]):
+                                logger.warning(f"Skipping news item with invalid string fields for {symbol}")
+                                continue
+                            
                             news_item = NewsItem(
-                                title=item.get('title'),
-                                publisher=item.get('publisher'),
-                                link=item.get('link'),
-                                published_date=datetime.fromtimestamp(item.get('providerPublishTime', 0)),
-                                summary=item.get('summary'),
-                                thumbnail=item.get('thumbnail', {}).get('resolutions', [{}])[0].get('url'),
+                                title=title,
+                                publisher=publisher,
+                                link=link,
+                                published_date=published_date,
+                                summary=summary,
+                                thumbnail=thumbnail,
                                 related_symbols=item.get('relatedTickers', [])
                             )
                             stock_news.append(news_item)
@@ -946,15 +1108,96 @@ async def get_stock_news(
         
         news_items = []
         if ticker_news:
+            # Log the entire first news item for debugging
+            logger.debug(f"Raw news data for {symbol}: {ticker_news[0]}")
+            
             for item in ticker_news:
                 try:
+                    # Log the raw item for debugging
+                    logger.debug(f"Processing news item for {symbol}: {item}")
+                    
+                    # Extract fields with fallbacks
+                    # Handle the new nested structure where content contains the actual news data
+                    if 'content' in item:
+                        # New structure
+                        content = item['content']
+                        title = content.get('title')
+                        
+                        # Publisher is now in provider.displayName
+                        publisher = None
+                        if 'provider' in content and isinstance(content['provider'], dict):
+                            publisher = content['provider'].get('displayName')
+                        
+                        # URL is now in canonicalUrl.url or clickThroughUrl.url
+                        link = None
+                        if 'canonicalUrl' in content and isinstance(content['canonicalUrl'], dict):
+                            link = content['canonicalUrl'].get('url')
+                        elif 'clickThroughUrl' in content and isinstance(content['clickThroughUrl'], dict):
+                            link = content['clickThroughUrl'].get('url')
+                        
+                        # Published date is now in pubDate or displayTime
+                        if 'pubDate' in content:
+                            published_date = datetime.fromisoformat(content['pubDate'].replace('Z', '+00:00'))
+                        elif 'displayTime' in content:
+                            published_date = datetime.fromisoformat(content['displayTime'].replace('Z', '+00:00'))
+                        else:
+                            published_date = datetime.utcnow()
+                        
+                        # Summary is now directly in content
+                        summary = content.get('summary')
+                        
+                        # Thumbnail handling is similar but nested in content
+                        thumbnail = None
+                        if 'thumbnail' in content and isinstance(content['thumbnail'], dict):
+                            resolutions = content['thumbnail'].get('resolutions', [])
+                            if resolutions and isinstance(resolutions, list) and len(resolutions) > 0:
+                                thumbnail = resolutions[0].get('url')
+                    else:
+                        # Old structure (keep as fallback)
+                        title = item.get('title') or item.get('headline') or None
+                        publisher = item.get('publisher') or item.get('source') or None
+                        link = item.get('link') or item.get('url') or None
+                        
+                        # Get published date with fallback
+                        published_date = None
+                        if 'providerPublishTime' in item:
+                            published_date = datetime.fromtimestamp(item['providerPublishTime'])
+                        elif 'publishedAt' in item:
+                            published_date = datetime.fromtimestamp(item['publishedAt'])
+                        else:
+                            published_date = datetime.utcnow()
+                        
+                        # Get thumbnail with fallback
+                        thumbnail = None
+                        if 'thumbnail' in item and isinstance(item['thumbnail'], dict):
+                            resolutions = item['thumbnail'].get('resolutions', [])
+                            if resolutions and isinstance(resolutions, list) and len(resolutions) > 0:
+                                thumbnail = resolutions[0].get('url')
+                                
+                        summary = item.get('summary')
+                    
+                    # Skip items with missing required fields
+                    if not all([title, publisher, link]):
+                        logger.warning(f"Skipping news item with missing required fields for {symbol}")
+                        continue
+                    
+                    # Ensure all required fields are strings
+                    title = str(title).strip()
+                    publisher = str(publisher).strip()
+                    link = str(link).strip()
+                    
+                    # Double check after string conversion
+                    if not all([title, publisher, link]):
+                        logger.warning(f"Skipping news item with invalid string fields for {symbol}")
+                        continue
+                    
                     news_items.append(NewsItem(
-                        title=item.get('title'),
-                        publisher=item.get('publisher'),
-                        link=item.get('link'),
-                        published_date=datetime.fromtimestamp(item.get('providerPublishTime', 0)),
-                        summary=item.get('summary'),
-                        thumbnail=item.get('thumbnail', {}).get('resolutions', [{}])[0].get('url'),
+                        title=title,
+                        publisher=publisher,
+                        link=link,
+                        published_date=published_date,
+                        summary=summary,
+                        thumbnail=thumbnail,
                         related_symbols=item.get('relatedTickers', [])
                     ))
                 except Exception as e:
