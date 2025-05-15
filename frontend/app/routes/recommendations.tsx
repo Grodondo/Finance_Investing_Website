@@ -463,11 +463,13 @@ const getFilteredHistoricalData = (data: Stock['historicalData'] | undefined, ra
 const RecommendedStock = ({ 
   stock, 
   index, 
-  onAddToWatchlist 
+  onAddToWatchlist,
+  isInWatchlist
 }: {
   stock: Stock;
   index: number;
   onAddToWatchlist: (symbol: string) => void;
+  isInWatchlist: boolean;
 }) => (
   <div className="bg-gray-50 dark:bg-gray-800 rounded-lg p-6 shadow-sm hover:shadow-md transition-shadow">
     <div className="flex justify-between items-start mb-4">
@@ -486,12 +488,18 @@ const RecommendedStock = ({
         </p>
       </div>
     </div>
-    <button
-      onClick={(e) => { e.stopPropagation(); onAddToWatchlist(stock.symbol); }}
-      className="w-full bg-indigo-600 text-white py-2 rounded-md hover:bg-indigo-700 transition-colors"
-    >
-      Add to Watchlist
-    </button>
+    {isInWatchlist ? (
+      <div className="w-full bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 py-2 text-center rounded-md font-medium">
+        In Watchlist
+      </div>
+    ) : (
+      <button
+        onClick={(e) => { e.stopPropagation(); onAddToWatchlist(stock.symbol); }}
+        className="w-full bg-indigo-600 text-white py-2 rounded-md hover:bg-indigo-700 transition-colors"
+      >
+        Add to Watchlist
+      </button>
+    )}
   </div>
 );
 
@@ -1127,6 +1135,11 @@ export default function Recommendations() {
     addToWatchlistMutation.mutate(symbol);
   }, [addToWatchlistMutation]);
   
+  // Add isInWatchlist helper function
+  const isInWatchlist = useCallback((symbol: string) => {
+    return watchlist?.some(stock => stock.symbol === symbol) ?? false;
+  }, [watchlist]);
+  
   return (
     <div className="min-h-screen pt-16 bg-gray-50 dark:bg-gray-900">
       {/* Main content */}
@@ -1156,6 +1169,7 @@ export default function Recommendations() {
                   stock={stock}
                   index={index}
                   onAddToWatchlist={handleAddToWatchlist}
+                  isInWatchlist={isInWatchlist(stock.symbol)}
                 />
               ))
             ) : (
