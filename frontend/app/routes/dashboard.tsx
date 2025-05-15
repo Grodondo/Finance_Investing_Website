@@ -1,7 +1,6 @@
-import { useState, useEffect, useMemo, useCallback } from "react";
+import { useState, useEffect, useMemo, useCallback, Suspense, lazy, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
-import { Line, Bar } from "react-chartjs-2";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Chart as ChartJS,
@@ -14,6 +13,7 @@ import {
   Legend,
   ChartOptions,
   Filler,
+  TimeScale
 } from "chart.js";
 import { DragDropContext, Droppable, Draggable } from "react-beautiful-dnd";
 import { 
@@ -27,6 +27,15 @@ import {
   BellIcon,
 } from "@heroicons/react/24/outline";
 
+// Import chart components lazily
+const Line = lazy(() => import("react-chartjs-2").then(module => ({ default: module.Line })));
+const Bar = lazy(() => import("react-chartjs-2").then(module => ({ default: module.Bar })));
+
+// Register zoom plugin
+// @ts-ignore
+import zoomPlugin from 'chartjs-plugin-zoom';
+
+// Register ChartJS components first
 ChartJS.register(
   CategoryScale,
   LinearScale,
@@ -35,8 +44,39 @@ ChartJS.register(
   Title,
   Tooltip,
   Legend,
-  Filler
+  Filler,
+  TimeScale,
+  zoomPlugin
 );
+
+// Configure zoom plugin
+ChartJS.defaults.plugins.zoom = {
+  pan: {
+    enabled: true,
+    mode: 'xy',
+    threshold: 10,
+    modifierKey: 'ctrl',
+  },
+  zoom: {
+    wheel: {
+      enabled: true,
+      speed: 0.1,
+    },
+    pinch: {
+      enabled: true
+    },
+    mode: 'xy',
+    drag: {
+      enabled: true,
+      backgroundColor: 'rgba(0,0,0,0.1)',
+      borderColor: 'rgba(0,0,0,0.3)',
+      borderWidth: 1,
+    }
+  },
+  limits: {
+    y: {min: 'original', max: 'original'}
+  }
+};
 
 interface Transaction {
   id: number;
@@ -109,6 +149,8 @@ interface DashboardItem {
   sectionId: SectionId;
   isFullWidth: boolean;
 }
+
+type TimeRange = '1D' | '7D' | '30D' | '1Y' | '5Y';
 
 const useTransactions = (authHeader: AuthHeader) => {
   return useQuery({
@@ -255,42 +297,125 @@ const prepareTransactionsChartData = (transactions: Transaction[]) => {
   };
 };
 
-const prepareWatchlistChartData = (watchlist: WatchlistStock[] | undefined, selectedStocks: string[]) => {
+const getFilteredHistoricalData = (data: WatchlistStock['historicalData'] | undefined, range: TimeRange) => {
+  if (!data || !Array.isArray(data) || data.length === 0) return [];
+
+  const now = new Date();
+  const cutoff = new Date(now);
+  
+  switch (range) {
+    case '1D': {
+      // For 1D, we should show data for the most recent day, whether intraday or not
+      const hasIntradayData = data.some(item => item.is_intraday);
+      
+      // Get the most recent date in the data
+      const sortedData = [...data].sort((a, b) => 
+        new Date(b.date).getTime() - new Date(a.date).getTime()
+      );
+      const mostRecentDate = sortedData[0]?.date?.split(' ')[0] || '';
+      
+      if (hasIntradayData) {
+        // Return all intraday data points for today
+        return data.filter(item => item.is_intraday && item.date.includes(mostRecentDate));
+      } else {
+        // If no intraday data, return the most recent day's data point (even if just one point)
+        return data.filter(item => item.date.includes(mostRecentDate)).slice(0, 1);
+      }
+    }
+    case '5Y': {
+      // Exactly 5 years back for 5Y view
+      cutoff.setFullYear(now.getFullYear() - 5);
+      
+      // For 5Y, we want daily or weekly data points, not intraday
+      const filteredData = data.filter(item => {
+        const itemDate = new Date(item.date);
+        return itemDate >= cutoff && !item.is_intraday;
+      });
+      
+      // If we have too many points, sample them to avoid overloading the chart
+      if (filteredData.length > 260) { // ~260 trading days in a year
+        // Sample approximately weekly data points (every 5 trading days)
+        return filteredData.filter((_, index) => index % 5 === 0);
+      }
+      
+      return filteredData;
+    }
+    case '7D':
+      cutoff.setDate(now.getDate() - 7);
+      break;
+    case '30D':
+      cutoff.setDate(now.getDate() - 30);
+      break;
+    case '1Y':
+      cutoff.setFullYear(now.getFullYear() - 1);
+      break;
+    default:
+      cutoff.setHours(now.getHours() - 24);
+  }
+
+  // For timeframes other than 1D and 5Y
+  return data.filter(item => {
+    const itemDate = new Date(item.date);
+    return itemDate >= cutoff && !item.is_intraday;
+  });
+};
+
+const prepareWatchlistChartData = (watchlist: WatchlistStock[] | undefined, selectedStocks: string[], range: TimeRange) => {
   if (!watchlist || watchlist.length === 0 || selectedStocks.length === 0) {
     return { labels: [], datasets: [] };
   }
 
-  const now = new Date();
-  const cutoff = new Date(now);
-  cutoff.setDate(now.getDate() - 30);
+  // Get all unique dates from selected stocks
+  const allDates = new Set<string>();
+  selectedStocks.forEach(symbol => {
+    const stock = watchlist.find(s => s.symbol === symbol);
+    if (stock?.historicalData) {
+      getFilteredHistoricalData(stock.historicalData, range)
+        .forEach(item => allDates.add(item.date));
+    }
+  });
 
+  // Sort dates chronologically
+  const sortedDates = Array.from(allDates).sort((a, b) => 
+    new Date(a).getTime() - new Date(b).getTime()
+  );
+
+  // Create datasets for each selected stock
   const datasets = selectedStocks.map((symbol, index) => {
     const stock = watchlist.find(s => s.symbol === symbol);
     if (!stock?.historicalData) return null;
 
-    const filteredData = stock.historicalData.filter(item => new Date(item.date) >= cutoff);
+    const filteredData = getFilteredHistoricalData(stock.historicalData, range);
     const color = COLORS[index % COLORS.length];
+    
+    const priceMap = new Map(
+      filteredData.map(item => [item.date, item.price])
+    );
+
+    const data = sortedDates.map(date => priceMap.get(date) ?? null);
 
     return {
       label: symbol,
-      data: filteredData.map(item => item.price),
+      data,
       borderColor: color,
       backgroundColor: `${color}20`,
       fill: true,
       tension: 0.4,
-      pointRadius: 0,
-      borderWidth: 2
+      pointRadius: range === '1D' ? 0 : 2,
+      pointHoverRadius: 4,
+      borderWidth: 2,
+      spanGaps: true
     };
   }).filter(dataset => dataset !== null);
 
-  const labels = watchlist[0]?.historicalData
-    ?.filter(item => new Date(item.date) >= cutoff)
-    .map(item => new Date(item.date).toLocaleDateString([], { month: 'short', day: 'numeric' })) || [];
-
-  return { labels, datasets };
+  return { 
+    labels: sortedDates,
+    datasets
+  };
 };
 
-const getChartOptions = (timeRange?: string): ChartOptions<"line"> => ({
+// Update chart options
+const getChartOptions = (chartRef: any): ChartOptions<"line"> => ({
   responsive: true,
   maintainAspectRatio: false,
   plugins: {
@@ -302,6 +427,40 @@ const getChartOptions = (timeRange?: string): ChartOptions<"line"> => ({
       mode: "index" as const, 
       intersect: false 
     },
+    zoom: {
+      pan: {
+        enabled: true,
+        mode: 'xy' as const,
+        threshold: 10,
+        modifierKey: 'ctrl',
+      },
+      zoom: {
+        wheel: {
+          enabled: true,
+          speed: 0.1,
+        },
+        pinch: {
+          enabled: true
+        },
+        mode: 'xy' as const,
+        drag: {
+          enabled: true,
+          backgroundColor: 'rgba(0,0,0,0.1)',
+          borderColor: 'rgba(0,0,0,0.3)',
+          borderWidth: 1,
+        }
+      },
+      limits: {
+        y: {min: 'original', max: 'original'}
+      }
+    }
+  },
+  elements: {
+    point: {
+      radius: 0, // Hide points by default
+      hitRadius: 8, // Keep hit radius for hover detection
+      hoverRadius: 5, // Show points on hover
+    }
   },
   scales: {
     y: { 
@@ -315,7 +474,7 @@ const getChartOptions = (timeRange?: string): ChartOptions<"line"> => ({
   },
 });
 
-const getWatchlistChartOptions = (): ChartOptions<"line"> => ({
+const getWatchlistChartOptions = (range: TimeRange, chartRef: any): ChartOptions<"line"> => ({
   responsive: true,
   maintainAspectRatio: false,
   plugins: {
@@ -337,7 +496,41 @@ const getWatchlistChartOptions = (): ChartOptions<"line"> => ({
       borderColor: 'rgba(75, 85, 99, 0.2)',
       borderWidth: 1,
       callbacks: {
-        label: (context: any) => `${context.dataset.label}: $${context.parsed.y.toFixed(2)}`
+        label: (context: any) => `${context.dataset.label}: $${context.parsed.y.toFixed(2)}`,
+        title: (context: any) => {
+          if (!context || !context[0] || context[0].dataIndex === undefined) {
+            return '';
+          }
+          
+          const index = context[0].dataIndex;
+          const labels = context[0].chart?.data?.labels;
+          if (!labels || !labels[index]) return '';
+          
+          const date = new Date(labels[index]);
+          return date.toLocaleDateString([], { 
+            weekday: 'long',
+            year: 'numeric',
+            month: 'long',
+            day: 'numeric',
+            hour: range === '1D' ? 'numeric' : undefined,
+            minute: range === '1D' ? 'numeric' : undefined
+          });
+        }
+      }
+    },
+    zoom: {
+      pan: {
+        enabled: true,
+        mode: 'xy' as const,
+      },
+      zoom: {
+        wheel: {
+          enabled: true,
+        },
+        pinch: {
+          enabled: true
+        },
+        mode: 'xy' as const,
       }
     }
   },
@@ -348,7 +541,26 @@ const getWatchlistChartOptions = (): ChartOptions<"line"> => ({
         color: 'rgba(75, 85, 99, 0.1)'
       },
       ticks: {
-        color: 'rgb(156, 163, 175)'
+        color: 'rgb(156, 163, 175)',
+        maxTicksLimit: range === '1D' ? 12 : range === '7D' ? 7 : range === '30D' ? 15 : 20,
+        callback: function(this: any, value, index) {
+          // Safe access to labels
+          if (!this.chart || !this.chart.data || !this.chart.data.labels || !this.chart.data.labels[index]) {
+            return '';
+          }
+          
+          const date = new Date(this.chart.data.labels[index] as string);
+          if (range === '1D') {
+            return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+          } else if (range === '7D') {
+            return date.toLocaleDateString([], { weekday: 'short', day: 'numeric' });
+          } else if (range === '30D') {
+            return date.toLocaleDateString([], { month: 'short', day: 'numeric' });
+          } else if (range === '5Y') {
+            return date.toLocaleDateString([], { year: 'numeric', month: 'short' });
+          }
+          return date.toLocaleDateString([], { month: 'short', year: '2-digit' });
+        }
       }
     },
     y: {
@@ -365,13 +577,47 @@ const getWatchlistChartOptions = (): ChartOptions<"line"> => ({
 });
 
 // Dashboard section component
-const DashboardSection = ({ sectionId, transactions, insights, watchlist, selectedStocks, setSelectedStocks, chartOptions, watchlistChartOptions, transactionsChartData, watchlistChartData }: any) => {
+const DashboardSection = ({ sectionId, transactions, insights, watchlist, selectedStocks, setSelectedStocks, watchlistChartOptions, transactionsChartOptions, transactionsChartData, watchlistChartData, timeRange, setTimeRange, isChartsVisible, watchlistChartRef, setWatchlistChartRef, transactionsChartRef, setTransactionsChartRef, resetWatchlistZoom, resetTransactionsZoom }: any) => {
+  const handleResetZoom = useCallback(() => {
+    if (sectionId === "portfolio-summary") {
+      resetTransactionsZoom();
+    } else if (sectionId === "watchlist") {
+      resetWatchlistZoom();
+    }
+  }, [sectionId, resetTransactionsZoom, resetWatchlistZoom]);
+
   return (
     <div className="p-6">
       {sectionId === "portfolio-summary" && (
         <div className="space-y-6">
           <div className="h-80">
-            <Line data={transactionsChartData} options={chartOptions} />
+            {!isChartsVisible ? (
+              <div className="h-full flex items-center justify-center">
+                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600 dark:border-indigo-400"></div>
+              </div>
+            ) : (
+              <Suspense fallback={
+                <div className="h-full flex items-center justify-center">
+                  <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600 dark:border-indigo-400"></div>
+                </div>
+              }>
+                <div className="flex justify-between mb-2">
+                  <div></div>
+                  <button
+                    onClick={handleResetZoom}
+                    className="px-3 py-1 rounded-md text-sm font-medium bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600"
+                  >
+                    Reset Zoom
+                  </button>
+                </div>
+                <Line 
+                  key={`transactions-chart-${transactions?.length || 0}-${isChartsVisible}`}
+                  data={transactionsChartData} 
+                  options={transactionsChartOptions} 
+                  ref={(ref) => setTransactionsChartRef(ref)}
+                />
+              </Suspense>
+            )}
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             <div className="bg-green-50 dark:bg-green-900/20 p-4 rounded-lg">
@@ -470,11 +716,86 @@ const DashboardSection = ({ sectionId, transactions, insights, watchlist, select
                   </div>
                 ))}
               </div>
+              <div className="flex justify-between items-center mb-4">
+                <h3 className="text-lg font-medium text-gray-900 dark:text-white">Price History</h3>
+                <div className="flex space-x-2 items-center">
+                  <button
+                    onClick={handleResetZoom}
+                    className="px-3 py-1 rounded-md text-sm font-medium bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600 mr-4"
+                  >
+                    Reset Zoom
+                  </button>
+                  <button
+                    onClick={() => setTimeRange('1D')}
+                    className={`px-3 py-1 rounded-md text-sm font-medium ${
+                      timeRange === '1D'
+                        ? 'bg-indigo-600 text-white'
+                        : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
+                    }`}
+                  >
+                    1D
+                  </button>
+                  <button
+                    onClick={() => setTimeRange('7D')}
+                    className={`px-3 py-1 rounded-md text-sm font-medium ${
+                      timeRange === '7D'
+                        ? 'bg-indigo-600 text-white'
+                        : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
+                    }`}
+                  >
+                    7D
+                  </button>
+                  <button
+                    onClick={() => setTimeRange('30D')}
+                    className={`px-3 py-1 rounded-md text-sm font-medium ${
+                      timeRange === '30D'
+                        ? 'bg-indigo-600 text-white'
+                        : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
+                    }`}
+                  >
+                    30D
+                  </button>
+                  <button
+                    onClick={() => setTimeRange('1Y')}
+                    className={`px-3 py-1 rounded-md text-sm font-medium ${
+                      timeRange === '1Y'
+                        ? 'bg-indigo-600 text-white'
+                        : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
+                    }`}
+                  >
+                    1Y
+                  </button>
+                  <button
+                    onClick={() => setTimeRange('5Y')}
+                    className={`px-3 py-1 rounded-md text-sm font-medium ${
+                      timeRange === '5Y'
+                        ? 'bg-indigo-600 text-white'
+                        : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
+                    }`}
+                  >
+                    5Y
+                  </button>
+                </div>
+              </div>
               <div className="h-[400px] bg-gray-50 dark:bg-gray-700 rounded-lg p-4">
-                <Line
-                  data={watchlistChartData}
-                  options={watchlistChartOptions}
-                />
+                {!isChartsVisible ? (
+                  <div className="h-full flex items-center justify-center">
+                    <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600 dark:border-indigo-400"></div>
+                  </div>
+                ) : (
+                  <Suspense fallback={
+                    <div className="h-full flex items-center justify-center">
+                      <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600 dark:border-indigo-400"></div>
+                    </div>
+                  }>
+                    <Line
+                      key={`watchlist-chart-${timeRange}-${selectedStocks.join('-')}-${isChartsVisible}`}
+                      data={watchlistChartData}
+                      options={watchlistChartOptions}
+                      ref={(ref) => setWatchlistChartRef(ref)}
+                    />
+                  </Suspense>
+                )}
               </div>
             </>
           ) : (
@@ -621,10 +942,15 @@ export default function Dashboard() {
   const { user, logout, getAuthHeader, isAuthenticated } = useAuth();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  
+  // All state declarations
   const [selectedStocks, setSelectedStocks] = useState<string[]>([]);
   const [isCompact, setIsCompact] = useState(false);
-
-  // Initial dashboard items
+  const [timeRange, setTimeRange] = useState<TimeRange>('30D');
+  const [isChartDataLoaded, setIsChartDataLoaded] = useState(false);
+  const [isChartsVisible, setIsChartsVisible] = useState(false);
+  const [watchlistChartRef, setWatchlistChartRef] = useState<any>(null);
+  const [transactionsChartRef, setTransactionsChartRef] = useState<any>(null);
   const [dashboardItems, setDashboardItems] = useState<DashboardItem[]>([
     { id: "item-portfolio-summary", sectionId: "portfolio-summary", isFullWidth: true },
     { id: "item-market-overview", sectionId: "market-overview", isFullWidth: true },
@@ -633,12 +959,13 @@ export default function Dashboard() {
     { id: "item-financial-insights", sectionId: "financial-insights", isFullWidth: false },
     { id: "item-price-alerts", sectionId: "price-alerts", isFullWidth: false }
   ]);
-
-  // Drag state
   const [draggedItem, setDraggedItem] = useState<number | null>(null);
+  const chartInstancesRef = useRef<{ [key: string]: any }>({});
 
+  // Auth header
   const authHeader = useMemo(() => getAuthHeader() as AuthHeader, [getAuthHeader]);
 
+  // Data fetching
   const { 
     data: transactions, 
     isLoading: isTransactionsLoading,
@@ -657,18 +984,127 @@ export default function Dashboard() {
     error: watchlistError 
   } = useWatchlistWithHistory(authHeader);
 
+  // Chart management functions
+  const destroyChart = useCallback((chartId: string) => {
+    if (chartInstancesRef.current[chartId]) {
+      try {
+        chartInstancesRef.current[chartId].destroy();
+        delete chartInstancesRef.current[chartId];
+      } catch (error) {
+        console.warn(`Error destroying chart ${chartId}:`, error);
+      }
+    }
+  }, []);
+
+  const registerChart = useCallback((chartId: string, instance: any) => {
+    destroyChart(chartId);
+    chartInstancesRef.current[chartId] = instance;
+  }, [destroyChart]);
+
+  const resetWatchlistZoom = useCallback(() => {
+    if (chartInstancesRef.current['watchlist']?.resetZoom) {
+      chartInstancesRef.current['watchlist'].resetZoom();
+    }
+  }, []);
+
+  const resetTransactionsZoom = useCallback(() => {
+    if (chartInstancesRef.current['transactions']?.resetZoom) {
+      chartInstancesRef.current['transactions'].resetZoom();
+    }
+  }, []);
+
+  const handleTransactionsChartRef = useCallback((ref: any) => {
+    if (ref) {
+      try {
+        if (chartInstancesRef.current['transactions']) {
+          chartInstancesRef.current['transactions'].destroy();
+        }
+        chartInstancesRef.current['transactions'] = ref.chartInstance || ref;
+      } catch (error) {
+        console.warn('Error setting transactions chart ref:', error);
+      }
+    }
+    setTransactionsChartRef(ref);
+  }, []);
+
+  const handleWatchlistChartRef = useCallback((ref: any) => {
+    if (ref) {
+      try {
+        if (chartInstancesRef.current['watchlist']) {
+          chartInstancesRef.current['watchlist'].destroy();
+        }
+        chartInstancesRef.current['watchlist'] = ref.chartInstance || ref;
+      } catch (error) {
+        console.warn('Error setting watchlist chart ref:', error);
+      }
+    }
+    setWatchlistChartRef(ref);
+  }, []);
+
+  // Update chart cleanup effect
+  useEffect(() => {
+    const cleanup = () => {
+      if (chartInstancesRef.current['watchlist']) {
+        try {
+          chartInstancesRef.current['watchlist'].destroy();
+          delete chartInstancesRef.current['watchlist'];
+        } catch (error) {
+          console.warn('Error destroying watchlist chart:', error);
+        }
+      }
+      if (chartInstancesRef.current['transactions']) {
+        try {
+          chartInstancesRef.current['transactions'].destroy();
+          delete chartInstancesRef.current['transactions'];
+        } catch (error) {
+          console.warn('Error destroying transactions chart:', error);
+        }
+      }
+    };
+
+    // Clean up on unmount
+    return () => {
+      cleanup();
+    };
+  }, []);
+
+  // Separate effect for data changes
+  useEffect(() => {
+    const cleanup = () => {
+      if (chartInstancesRef.current['watchlist']) {
+        try {
+          chartInstancesRef.current['watchlist'].destroy();
+          delete chartInstancesRef.current['watchlist'];
+        } catch (error) {
+          console.warn('Error destroying watchlist chart:', error);
+        }
+      }
+      if (chartInstancesRef.current['transactions']) {
+        try {
+          chartInstancesRef.current['transactions'].destroy();
+          delete chartInstancesRef.current['transactions'];
+        } catch (error) {
+          console.warn('Error destroying transactions chart:', error);
+        }
+      }
+    };
+
+    cleanup();
+  }, [timeRange, selectedStocks]);
+
+  // Chart data preparation
   const transactionsChartData = useMemo(() => {
-    if (!transactions) return { labels: [], datasets: [] };
+    if (!transactions || !isChartDataLoaded) return { labels: [], datasets: [] };
     return prepareTransactionsChartData(transactions);
-  }, [transactions]);
+  }, [transactions, isChartDataLoaded]);
 
   const watchlistChartData = useMemo(() => {
-    if (!watchlist) return { labels: [], datasets: [] };
-    return prepareWatchlistChartData(watchlist, selectedStocks);
-  }, [watchlist, selectedStocks]);
+    if (!watchlist || !isChartDataLoaded) return { labels: [], datasets: [] };
+    return prepareWatchlistChartData(watchlist, selectedStocks, timeRange);
+  }, [watchlist, selectedStocks, timeRange, isChartDataLoaded]);
 
-  const chartOptions = useMemo(() => getChartOptions(), []);
-  const watchlistChartOptions = useMemo(() => getWatchlistChartOptions(), []);
+  const transactionsChartOptions = useMemo(() => getChartOptions(transactionsChartRef), [transactionsChartRef]);
+  const watchlistChartOptions = useMemo(() => getWatchlistChartOptions(timeRange, watchlistChartRef), [timeRange, watchlistChartRef]);
 
   // HTML5 Drag and Drop functions
   const handleDragStart = (index: number) => {
@@ -717,6 +1153,20 @@ export default function Dashboard() {
       setSelectedStocks(watchlist.map(stock => stock.symbol));
     }
   }, [watchlist]);
+
+  // First load data, then initialize charts with delay
+  useEffect(() => {
+    if (!isTransactionsLoading && !transactionsError && !isInsightsLoading && !insightsError && !isWatchlistLoading && !watchlistError) {
+      // First load chart data
+      setIsChartDataLoaded(true);
+      
+      // Then show charts after a delay
+      const timer = setTimeout(() => {
+        setIsChartsVisible(true);
+      }, 1000);
+      return () => clearTimeout(timer);
+    }
+  }, [isTransactionsLoading, transactionsError, isInsightsLoading, insightsError, isWatchlistLoading, watchlistError]);
 
   const isLoading = isTransactionsLoading || isInsightsLoading || isWatchlistLoading;
   const error = transactionsError || insightsError || watchlistError;
@@ -838,10 +1288,19 @@ export default function Dashboard() {
                 watchlist={watchlist}
                 selectedStocks={selectedStocks}
                 setSelectedStocks={setSelectedStocks}
-                chartOptions={chartOptions}
                 watchlistChartOptions={watchlistChartOptions}
+                transactionsChartOptions={transactionsChartOptions}
                 transactionsChartData={transactionsChartData}
                 watchlistChartData={watchlistChartData}
+                timeRange={timeRange}
+                setTimeRange={setTimeRange}
+                isChartsVisible={isChartsVisible}
+                watchlistChartRef={handleWatchlistChartRef}
+                setWatchlistChartRef={setWatchlistChartRef}
+                transactionsChartRef={handleTransactionsChartRef}
+                setTransactionsChartRef={setTransactionsChartRef}
+                resetWatchlistZoom={resetWatchlistZoom}
+                resetTransactionsZoom={resetTransactionsZoom}
               />
             </div>
           ))}

@@ -110,48 +110,57 @@ async def get_stock_data(symbol: str, db: Session) -> StockDetail:
         
         # Get historical data
         end_date = datetime.now()
-        start_date = end_date - timedelta(days=365)  # Changed to 1 year
-        logger.info(f"Fetching historical data from {start_date} to {end_date}")
+        
+        # For 5-year data, we need to fetch a longer duration
+        five_year_start_date = end_date - timedelta(days=365*5)  # 5 years
+        one_year_start_date = end_date - timedelta(days=365)    # 1 year
+        
+        logger.info(f"Fetching 5-year historical data from {five_year_start_date} to {end_date}")
+        logger.info(f"Fetching 1-year historical data from {one_year_start_date} to {end_date}")
         
         try:
-            # First try to get intraday data for 1-day view with 5-minute intervals
+            # Fetch intraday data for 1-day view with 5-minute intervals
             intraday_hist = ticker.history(period="1d", interval="5m")
             logger.info(f"Intraday data shape: {intraday_hist.shape if not intraday_hist.empty else 'Empty'}")
             
             if intraday_hist.empty:
-                logger.warning("No 5-minute interval data available, trying 1-hour interval")
+                logger.warning(f"No intraday data available for {symbol}")
+                # Try 1-hour interval as fallback
                 intraday_hist = ticker.history(period="1d", interval="1h")
                 logger.info(f"1-hour interval data shape: {intraday_hist.shape if not intraday_hist.empty else 'Empty'}")
-            
-            # Get daily data for the last year
-            daily_hist = ticker.history(start=start_date, end=end_date, interval='1d')
-            logger.info(f"Daily data shape: {daily_hist.shape if not daily_hist.empty else 'Empty'}")
-            
-            if daily_hist.empty:
-                logger.warning(f"No daily data available for {symbol} in 1-year range")
-                # Try getting a shorter period if 1 year fails
-                logger.info("Attempting to fetch 1-year period instead")
-                daily_hist = ticker.history(period="1y", interval='1d')
-                logger.info(f"1-year period data shape: {daily_hist.shape if not daily_hist.empty else 'Empty'}")
                 
-                if daily_hist.empty:
-                    logger.warning(f"Still no daily data available for {symbol}")
-                    # Try one last time with a different interval
-                    logger.info("Attempting to fetch with 1d interval")
-                    daily_hist = ticker.history(period="1y", interval='1d', auto_adjust=True)
-                    logger.info(f"Final attempt data shape: {daily_hist.shape if not daily_hist.empty else 'Empty'}")
+                if intraday_hist.empty:
+                    # If still no data, try 1-day interval - at least we'll have one point for today
+                    intraday_hist = ticker.history(period="1d", interval="1d")
+                    logger.info(f"1-day interval data shape: {intraday_hist.shape if not intraday_hist.empty else 'Empty'}")
+            
+            # Get 5-year daily data - try different approaches for reliability
+            # First, use a specific date range
+            five_year_hist = ticker.history(start=five_year_start_date, end=end_date, interval='1d')
+            logger.info(f"5-year data shape: {five_year_hist.shape if not five_year_hist.empty else 'Empty'}")
+            
+            if five_year_hist.empty or len(five_year_hist) < 252*3:  # At least 3 years of data (approx 252 trading days per year)
+                logger.warning(f"Insufficient 5-year data available for {symbol}, trying period='5y'")
+                five_year_hist = ticker.history(period="5y", interval='1d')
+                logger.info(f"5-year period data shape: {five_year_hist.shape if not five_year_hist.empty else 'Empty'}")
+                
+                if five_year_hist.empty or len(five_year_hist) < 252*3:
+                    logger.warning(f"Still insufficient 5-year data for {symbol}, trying max period")
+                    # Fall back to max data
+                    five_year_hist = ticker.history(period="max", interval='1d')
+                    logger.info(f"Max period data shape: {five_year_hist.shape if not five_year_hist.empty else 'Empty'}")
         except Exception as e:
             logger.error(f"Error fetching historical data for {symbol}: {str(e)}")
             intraday_hist = pd.DataFrame()
-            daily_hist = pd.DataFrame()
+            five_year_hist = pd.DataFrame()
         
         # Convert historical data to list of dicts
         historical_data = []
         
-        # Process daily data first (for 7D and 30D views)
-        if not daily_hist.empty:
-            logger.info(f"Processing {len(daily_hist)} daily data points")
-            for date, row in daily_hist.iterrows():
+        # Process 5-year daily data (we'll filter for other periods in the frontend)
+        if not five_year_hist.empty:
+            logger.info(f"Processing {len(five_year_hist)} daily data points")
+            for date, row in five_year_hist.iterrows():
                 try:
                     historical_data.append({
                         'date': date.strftime('%Y-%m-%d'),
@@ -171,6 +180,7 @@ async def get_stock_data(symbol: str, db: Session) -> StockDetail:
             logger.info(f"Processing {len(intraday_hist)} intraday data points")
             for date, row in intraday_hist.iterrows():
                 try:
+                    # Format includes time for intraday data
                     historical_data.append({
                         'date': date.strftime('%Y-%m-%d %H:%M:%S'),
                         'price': float(row['Close']),

@@ -10,6 +10,7 @@
   "dependencies": {
     "@tanstack/react-query": "^5.76.1",
     "chart.js": "^4.4.0",
+    "chartjs-plugin-zoom": "^2.0.1",
     "isbot": "^5.1.27",
     "react": "^19.1.0",
     "react-chartjs-2": "^5.2.0",

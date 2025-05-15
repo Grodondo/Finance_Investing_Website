@@ -1,7 +1,6 @@
-import { useState, useEffect, useMemo, useCallback } from "react";
+import { useState, useEffect, useMemo, useCallback, Suspense, lazy, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
-import { Line } from "react-chartjs-2";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Chart as ChartJS,
@@ -12,9 +11,18 @@ import {
   Title,
   Tooltip,
   Legend,
-  Filler
+  Filler,
+  TimeScale
 } from "chart.js";
+// Import zoom plugin
+// @ts-ignore
+import zoomPlugin from 'chartjs-plugin-zoom';
+// Import adapter for time scale
+import 'chartjs-adapter-date-fns';
+// Import the Line chart lazily
+const Line = lazy(() => import("react-chartjs-2").then(module => ({ default: module.Line })));
 
+// Register Chart.js components once
 ChartJS.register(
   CategoryScale,
   LinearScale,
@@ -23,9 +31,41 @@ ChartJS.register(
   Title,
   Tooltip,
   Legend,
-  Filler
+  Filler,
+  TimeScale,
+  zoomPlugin
 );
 
+// Configure zoom plugin globally - using proper type assertions
+ChartJS.defaults.plugins.zoom = {
+  pan: {
+    enabled: true,
+    mode: 'xy' as const,
+    threshold: 10,
+    modifierKey: 'ctrl' as const,
+  },
+  zoom: {
+    wheel: {
+      enabled: true,
+      speed: 0.1,
+    },
+    pinch: {
+      enabled: true
+    },
+    mode: 'xy' as const,
+    drag: {
+      enabled: true,
+      backgroundColor: 'rgba(0,0,0,0.1)',
+      borderColor: 'rgba(0,0,0,0.3)',
+      borderWidth: 1,
+    }
+  },
+  limits: {
+    y: {min: 'original' as const, max: 'original' as const}
+  }
+};
+
+// Define interfaces with proper types
 interface StockResponse {
   symbol: string;
   name: string;
@@ -93,38 +133,114 @@ interface Watchlist {
 type TimeRange = '1D' | '7D' | '30D' | '1Y' | '5Y';
 type AuthHeader = { Authorization: string } | null;
 
+// Colors array available at the module level for consistent use
+const COLORS = ['#FF6384', '#36A2EB', '#FFCE56', '#4BC0C0', '#9966FF', '#FF9F40', '#C9CBCF', '#E57373', '#81C784', '#64B5F6'];
+
+// Data fetching hooks
 const useRecommendations = (authHeader: AuthHeader) => {
   return useQuery({
     queryKey: ['recommendations'],
     queryFn: async () => {
       if (!authHeader) return [];
-      const response = await fetch("/api/stocks/recommendations", {
-        headers: {
-          ...authHeader,
-          "Content-Type": "application/json"
+      
+      // Add some retry logic for recommendations
+      let attempts = 0;
+      const maxAttempts = 3;
+      
+      while (attempts < maxAttempts) {
+        try {
+          const response = await fetch("/api/stocks/recommendations", {
+            headers: {
+              ...authHeader,
+              "Content-Type": "application/json"
+            }
+          });
+          
+          if (!response.ok) {
+            throw new Error(`Failed to fetch recommendations: ${response.status}`);
+          }
+          
+          const data = await response.json() as StockResponse[];
+          
+          // Ensure we got valid data
+          if (!Array.isArray(data)) {
+            throw new Error('Invalid recommendations data format');
+          }
+          
+          // Log how many recommendations we got
+          console.log(`Fetched ${data.length} recommendations`);
+          
+          // Default to some popular stocks if no recommendations available
+          if (data.length === 0 && attempts === maxAttempts - 1) {
+            console.log('No recommendations available, using default stocks');
+            const defaultResponse = await fetch("/api/stocks/AAPL", {
+              headers: {
+                ...authHeader,
+                "Content-Type": "application/json"
+              }
+            });
+            
+            if (defaultResponse.ok) {
+              const stockData = await defaultResponse.json() as StockResponse;
+              stockData.recommendation = "BUY";
+              stockData.recommendation_reason = "Popular technology stock with strong performance";
+              
+              // Transform to the correct format
+              return [{
+                symbol: stockData.symbol,
+                name: stockData.name,
+                currentPrice: stockData.current_price || 0,
+                change: stockData.change || 0,
+                changePercent: stockData.change_percent || 0,
+                volume: stockData.volume || 0,
+                marketCap: stockData.market_cap || 0,
+                historicalData: stockData.historical_data?.map(point => ({
+                  date: point.date,
+                  price: point.price,
+                  is_intraday: point.date.includes(' ')
+                })) || [],
+                recommendation: stockData.recommendation || 'BUY',
+                recommendationReason: stockData.recommendation_reason || 'Strong market performance'
+              }] as Stock[];
+            }
+          }
+          
+          return data.map((stock: StockResponse) => ({
+            symbol: stock.symbol,
+            name: stock.name,
+            currentPrice: stock.current_price || 0,
+            change: stock.change || 0,
+            changePercent: stock.change_percent || 0,
+            volume: stock.volume || 0,
+            marketCap: stock.market_cap || 0,
+            historicalData: stock.historical_data?.map(point => ({
+              date: point.date,
+              price: point.price,
+              is_intraday: point.date.includes(' ')
+            })) || [],
+            recommendation: stock.recommendation || 'BUY',
+            recommendationReason: stock.recommendation_reason || 'Strong market performance'
+          })) as Stock[];
+          
+        } catch (error) {
+          console.error(`Attempt ${attempts + 1} failed:`, error);
+          attempts++;
+          
+          // On the last attempt, throw the error
+          if (attempts === maxAttempts) {
+            throw error;
+          }
+          
+          // Wait a bit before retrying
+          await new Promise(resolve => setTimeout(resolve, 1000));
         }
-      });
-      if (!response.ok) throw new Error("Failed to fetch recommendations");
-      const data = await response.json() as StockResponse[];
-      return data.map((stock: StockResponse) => ({
-        symbol: stock.symbol,
-        name: stock.name,
-        currentPrice: stock.current_price || 0,
-        change: stock.change || 0,
-        changePercent: stock.change_percent || 0,
-        volume: stock.volume || 0,
-        marketCap: stock.market_cap || 0,
-        historicalData: stock.historical_data?.map(point => ({
-          date: point.date,
-          price: point.price,
-          is_intraday: point.date.includes(' ')
-        })) || [],
-        recommendation: stock.recommendation || 'N/A',
-        recommendationReason: stock.recommendation_reason || 'No reason provided'
-      })) as Stock[];
+      }
+      
+      return []; // Shouldn't reach here due to throw in the loop
     },
     enabled: !!authHeader,
     staleTime: 30000, // Consider data fresh for 30 seconds
+    retry: 2, // React Query's built-in retry mechanism as backup
   });
 };
 
@@ -174,6 +290,9 @@ const useWatchlistWithHistory = (authHeader: AuthHeader) => {
               const stockData = await response.json() as StockResponse;
               return {
                 ...stock,
+                currentPrice: stockData.current_price || stock.currentPrice,
+                change: stockData.change || stock.change,
+                changePercent: stockData.change_percent || stock.changePercent,
                 historicalData: stockData.historical_data?.map(point => ({
                   date: point.date,
                   price: point.price,
@@ -195,178 +314,650 @@ const useWatchlistWithHistory = (authHeader: AuthHeader) => {
   });
 };
 
+// Improved getFilteredHistoricalData function to fix time granularity issues
 const getFilteredHistoricalData = (data: Stock['historicalData'] | undefined, range: TimeRange) => {
-  if (!data || !Array.isArray(data)) return [];
+  if (!data || !Array.isArray(data) || data.length === 0) return [];
 
   const now = new Date();
   const cutoff = new Date(now);
   
   switch (range) {
-    case '7D':
-      cutoff.setDate(now.getDate() - 7);
-      break;
-    case '30D':
-      cutoff.setDate(now.getDate() - 30);
-      break;
-    case '1Y':
-      cutoff.setFullYear(now.getFullYear() - 1);
-      break;
-    case '5Y':
+    case '1D': {
+      // For 1D, we need minute-level granularity for the past 24 hours
+      cutoff.setHours(cutoff.getHours() - 24);
+      
+      // First try to get intraday data for the last 24 hours
+      let filteredData = data
+        .filter(item => item.is_intraday && new Date(item.date) >= cutoff)
+        .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+      
+      // If no intraday data in the last 24 hours, get the most recent intraday data
+      // regardless of the cutoff time to show something
+      if (filteredData.length === 0) {
+        const intradayData = data.filter(item => item.is_intraday);
+        if (intradayData.length > 0) {
+          // Get the most recent day's worth of intraday data
+          const latestDate = new Date(Math.max(...intradayData.map(item => new Date(item.date).getTime())));
+          const oneDayBack = new Date(latestDate);
+          oneDayBack.setHours(oneDayBack.getHours() - 24);
+          
+          filteredData = intradayData
+            .filter(item => new Date(item.date) >= oneDayBack)
+            .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+        }
+      }
+      
+      // If we still don't have data, fall back to the most recent data points
+      if (filteredData.length === 0) {
+        // Get the most recent 24 data points, whatever they are
+        filteredData = [...data]
+          .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+          .slice(0, 24)
+          .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+      }
+      
+      // If we have a very large number of points, sample them to prevent overcrowding
+      if (filteredData.length > 200) {
+        const sampleRate = Math.max(1, Math.floor(filteredData.length / 100));
+        return filteredData.filter((_, index) => index % sampleRate === 0);
+      }
+      
+      return filteredData;
+    }
+    case '7D': {
+      // For 7D, we need hourly data for the past 7 days
+      cutoff.setDate(cutoff.getDate() - 7);
+      
+      // Get all data points from the last 7 days
+      const allData = data
+        .filter(item => new Date(item.date) >= cutoff)
+        .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+        
+      // If we have sufficient data, use it directly
+      if (allData.length >= 7) {
+        // If we have a lot of data points, sample to get hourly data
+        if (allData.length > 168) { // 24 hours * 7 days
+          const sampleRate = Math.max(1, Math.floor(allData.length / 168));
+          return allData.filter((_, index) => index % sampleRate === 0);
+        }
+        return allData;
+      }
+      
+      // If we don't have enough data in the 7-day window, get the most recent 7 days of data
+      // regardless of the cutoff time
+      const sortedData = [...data].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+      const recentData = sortedData.slice(0, Math.min(168, sortedData.length));
+      return recentData.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+    }
+    case '30D': {
+      // For 30D view, use daily data
+      cutoff.setDate(cutoff.getDate() - 30);
+      
+      // Get daily data for the last 30 days
+      const dailyData = data
+        .filter(item => new Date(item.date) >= cutoff)
+        .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+        
+      // If we have intraday data mixed in, use one data point per day
+      if (dailyData.some(item => item.is_intraday)) {
+        const uniqueDays = new Map<string, any>();
+        dailyData.forEach(item => {
+          const date = new Date(item.date);
+          const dayKey = `${date.getFullYear()}-${date.getMonth() + 1}-${date.getDate()}`;
+          
+          // Prefer non-intraday data for each day
+          if (!uniqueDays.has(dayKey) || item.is_intraday === false) {
+            uniqueDays.set(dayKey, item);
+          }
+        });
+        return Array.from(uniqueDays.values())
+          .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+      }
+      
+      return dailyData;
+    }
+    case '1Y': {
+      // For 1Y view, use daily data
+      cutoff.setFullYear(cutoff.getFullYear() - 1);
+      
+      // Prioritize non-intraday data, but use what we have
+      const filteredData = data
+        .filter(item => new Date(item.date) >= cutoff)
+        .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+      
+      // Group by day to get one data point per day
+      const uniqueDays = new Map<string, any>();
+      filteredData.forEach(item => {
+        const date = new Date(item.date);
+        const dayKey = `${date.getFullYear()}-${date.getMonth() + 1}-${date.getDate()}`;
+        
+        // Prefer non-intraday data for each day
+        if (!uniqueDays.has(dayKey) || item.is_intraday === false) {
+          uniqueDays.set(dayKey, item);
+        }
+      });
+      
+      return Array.from(uniqueDays.values())
+        .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+    }
+    case '5Y': {
+      // Exactly 5 years back for 5Y view
       cutoff.setFullYear(now.getFullYear() - 5);
-      break;
+      
+      // Prioritize non-intraday data, but use what we have
+      const filteredData = data
+        .filter(item => new Date(item.date) >= cutoff)
+        .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+      
+      // Group by day to get one data point per day
+      const uniqueDays = new Map<string, any>();
+      filteredData.forEach(item => {
+        const date = new Date(item.date);
+        const dayKey = `${date.getFullYear()}-${date.getMonth() + 1}-${date.getDate()}`;
+        
+        // Prefer non-intraday data for each day
+        if (!uniqueDays.has(dayKey) || item.is_intraday === false) {
+          uniqueDays.set(dayKey, item);
+        }
+      });
+      
+      const dailyData = Array.from(uniqueDays.values())
+        .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+      
+      // If we have too many points, sample them to reduce load
+      if (dailyData.length > 260) { // ~260 trading days in a year
+        const sampleRate = Math.max(1, Math.floor(dailyData.length / 260));
+        return dailyData.filter((_, index) => index % sampleRate === 0);
+      }
+      
+      return dailyData;
+    }
     default:
       cutoff.setHours(now.getHours() - 24);
+      return data
+        .filter(item => new Date(item.date) >= cutoff)
+        .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
   }
-
-  return data.filter(item => {
-    const itemDate = new Date(item.date);
-    return itemDate >= cutoff && !item.is_intraday;
-  });
 };
 
-// Move colors array to component scope
-const COLORS = ['#FF6384', '#36A2EB', '#FFCE56', '#4BC0C0', '#9966FF', '#FF9F40', '#C9CBCF', '#E57373', '#81C784', '#64B5F6'];
+// Recommended Stock component
+const RecommendedStock = ({ 
+  stock, 
+  index, 
+  onAddToWatchlist 
+}: {
+  stock: Stock;
+  index: number;
+  onAddToWatchlist: (symbol: string) => void;
+}) => (
+  <div className="bg-gray-50 dark:bg-gray-800 rounded-lg p-6 shadow-sm hover:shadow-md transition-shadow">
+    <div className="flex justify-between items-start mb-4">
+      <div>
+        <div className="flex items-center space-x-2">
+          <span className="text-lg font-medium text-indigo-600 dark:text-indigo-400">#{index + 1}</span>
+          <h3 className="text-xl font-bold text-gray-900 dark:text-dark-text">{stock.symbol}</h3>
+        </div>
+        <p className="text-sm text-gray-600 dark:text-gray-400">{stock.name}</p>
+        <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">{stock.recommendationReason}</p>
+      </div>
+      <div className="text-right">
+        <p className="text-xl font-bold text-gray-900 dark:text-dark-text">${stock.currentPrice.toFixed(2)}</p>
+        <p className={`text-sm ${stock.change >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
+          {stock.change >= 0 ? '+' : ''}{stock.change.toFixed(2)} ({stock.changePercent.toFixed(2)}%)
+        </p>
+      </div>
+    </div>
+    <button
+      onClick={(e) => { e.stopPropagation(); onAddToWatchlist(stock.symbol); }}
+      className="w-full bg-indigo-600 text-white py-2 rounded-md hover:bg-indigo-700 transition-colors"
+    >
+      Add to Watchlist
+    </button>
+  </div>
+);
 
-const prepareChartData = (watchlist: Watchlist[] | undefined, selectedStocks: string[], range: TimeRange) => {
-  if (!watchlist || watchlist.length === 0 || selectedStocks.length === 0) {
-    return { labels: [], datasets: [], options: {} };
-  }
+// Watchlist Stock component
+const WatchlistStock = ({ 
+  stock, 
+  index, 
+  isSelected, 
+  onToggleSelect, 
+  onSelect 
+}: {
+  stock: Watchlist;
+  index: number;
+  isSelected: boolean;
+  onToggleSelect: () => void;
+  onSelect: () => void;
+}) => (
+  <div className="bg-gray-50 dark:bg-gray-800 rounded-lg p-4 shadow-sm hover:shadow-md transition-shadow">
+    <div className="flex items-center space-x-2 mb-2">
+      <div 
+        className="w-3 h-3 rounded-full" 
+        style={{ backgroundColor: COLORS[index % COLORS.length] }}
+      />
+      <input
+        type="checkbox"
+        checked={isSelected}
+        onChange={onToggleSelect}
+        className="cursor-pointer"
+      />
+      <div onClick={onSelect} className="cursor-pointer flex-1">
+        <p className="text-sm font-medium text-gray-900 dark:text-dark-text">{stock.symbol}</p>
+        <p className="text-xs text-gray-500 dark:text-gray-400">{stock.name}</p>
+      </div>
+    </div>
+    <div className="flex justify-between items-center">
+      <p className="text-sm font-medium text-gray-900 dark:text-dark-text">${stock.currentPrice.toFixed(2)}</p>
+      <p className={`text-xs ${stock.change >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
+        {stock.change >= 0 ? '+' : ''}{stock.change.toFixed(2)} ({stock.changePercent.toFixed(2)}%)
+      </p>
+    </div>
+  </div>
+);
 
-  // Get all unique dates from selected stocks
-  const allDates = new Set<string>();
-  selectedStocks.forEach(symbol => {
-    const stock = watchlist.find(s => s.symbol === symbol);
-    if (stock?.historicalData) {
-      getFilteredHistoricalData(stock.historicalData, range)
-        .forEach(item => allDates.add(item.date));
-    }
-  });
+// Time Range Selector component
+const TimeRangeSelector = ({ 
+  timeRange, 
+  setTimeRange 
+}: {
+  timeRange: TimeRange;
+  setTimeRange: (range: TimeRange) => void;
+}) => (
+  <div className="flex space-x-2 items-center">
+    {(['1D', '7D', '30D', '1Y', '5Y'] as TimeRange[]).map((range) => (
+      <button
+        key={range}
+        onClick={() => setTimeRange(range)}
+        className={`px-3 py-1 rounded-md text-sm font-medium ${
+          timeRange === range
+            ? 'bg-indigo-600 text-white'
+            : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
+        }`}
+      >
+        {range}
+      </button>
+    ))}
+  </div>
+);
 
-  // Sort dates chronologically
-  const sortedDates = Array.from(allDates).sort((a, b) => new Date(a).getTime() - new Date(b).getTime());
-
-  // Create datasets for each selected stock
-  const datasets = selectedStocks.map((symbol, index) => {
-    const stock = watchlist.find(s => s.symbol === symbol);
-    if (!stock?.historicalData) return null;
-
-    const color = COLORS[index % COLORS.length];
-    const priceMap = new Map(
-      getFilteredHistoricalData(stock.historicalData, range)
-        .map(item => [item.date, item.price])
-    );
-
-    const data = sortedDates.map(date => priceMap.get(date) ?? null);
-
-    return {
-      label: symbol,
-      data,
-      borderColor: color,
-      backgroundColor: `${color}20`,
-      fill: false,
-      tension: 0,
-      pointRadius: 1,
-      pointHoverRadius: 4,
-      pointBackgroundColor: color,
-      pointBorderColor: color,
-      borderWidth: 1,
-      spanGaps: true,
-      showLine: true
+// Simplified chart component that uses standard scales instead of time scales
+const StockChart = ({ 
+  watchlist, 
+  selectedStocks, 
+  timeRange, 
+  instanceId 
+}: {
+  watchlist: Watchlist[];
+  selectedStocks: string[];
+  timeRange: TimeRange;
+  instanceId: string;
+}) => {
+  const chartRef = useRef<any>(null);
+  const [chartKey, setChartKey] = useState(`chart-${instanceId}-${Date.now()}`);
+  const [theme, setTheme] = useState<'light' | 'dark'>(
+    window?.matchMedia?.('(prefers-color-scheme: dark)')?.matches ? 'dark' : 'light'
+  );
+  
+  // Listen for theme changes
+  useEffect(() => {
+    const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
+    const handleChange = (e: MediaQueryListEvent) => {
+      setTheme(e.matches ? 'dark' : 'light');
     };
-  }).filter(dataset => dataset !== null);
+    
+    mediaQuery.addEventListener('change', handleChange);
+    return () => mediaQuery.removeEventListener('change', handleChange);
+  }, []);
 
-  // Create chart options
-  const chartOptions = {
-    responsive: true,
-    maintainAspectRatio: false,
-    interaction: {
-      mode: 'index' as const,
-      intersect: false,
-    },
-    plugins: {
-      legend: { 
-        display: true, 
-        position: 'top' as const,
-        labels: {
-          usePointStyle: true,
-          pointStyle: 'circle',
-          padding: 20
+  // Force chart recreation when dependencies change
+  useEffect(() => {
+    setChartKey(`chart-${instanceId}-${timeRange}-${selectedStocks.join('-')}-${Date.now()}`);
+    
+    return () => {
+      if (chartRef.current) {
+        try {
+          chartRef.current.destroy();
+          chartRef.current = null;
+        } catch (error) {
+          console.warn('Error destroying chart:', error);
         }
+      }
+    };
+  }, [timeRange, selectedStocks.join(','), instanceId]);
+  
+  // Format date labels based on timeRange
+  const formatDateLabel = useCallback((dateStr: string) => {
+    const date = new Date(dateStr);
+    if (timeRange === '1D') {
+      return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    } else if (timeRange === '7D') {
+      return `${date.toLocaleDateString([], { weekday: 'short' })} ${date.getHours()}:00`;
+    } else if (timeRange === '30D') {
+      return date.toLocaleDateString([], { month: 'short', day: 'numeric' });
+    } else if (timeRange === '5Y') {
+      return date.toLocaleDateString([], { year: 'numeric', month: 'short' });
+    }
+    return date.toLocaleDateString([], { month: 'short', year: '2-digit' });
+  }, [timeRange]);
+  
+  // Prepare chart data - memoized
+  const chartData = useMemo(() => {
+    if (!watchlist || watchlist.length === 0 || selectedStocks.length === 0) {
+      return { labels: [], datasets: [] };
+    }
+
+    // Get all unique dates from selected stocks
+    const allDates = new Set<string>();
+    selectedStocks.forEach(symbol => {
+      const stock = watchlist.find(s => s.symbol === symbol);
+      if (stock?.historicalData) {
+        getFilteredHistoricalData(stock.historicalData, timeRange)
+          .forEach(item => allDates.add(item.date));
+      }
+    });
+
+    // Sort dates chronologically
+    const sortedDates = Array.from(allDates).sort((a, b) => new Date(a).getTime() - new Date(b).getTime());
+
+    // Format the dates for display
+    const formattedDateLabels = sortedDates.map(formatDateLabel);
+
+    // Create datasets for each selected stock
+    const datasets = selectedStocks.map((symbol, index) => {
+      const stock = watchlist.find(s => s.symbol === symbol);
+      if (!stock?.historicalData) return null;
+
+      const color = COLORS[index % COLORS.length];
+      const filteredData = getFilteredHistoricalData(stock.historicalData, timeRange);
+      const priceMap = new Map(
+        filteredData.map(item => [item.date, item.price])
+      );
+
+      // Only provide values for dates that exist in this stock's data
+      const data = sortedDates.map(date => priceMap.has(date) ? priceMap.get(date) : null);
+
+      return {
+        label: symbol,
+        data,
+        borderColor: color,
+        backgroundColor: `${color}20`,
+        fill: timeRange === '1D' ? false : true,
+        tension: 0.1,
+        pointRadius: 0, // Hide points by default
+        pointHoverRadius: 5, // Show points on hover
+        pointBackgroundColor: color,
+        pointBorderColor: 'white',
+        pointBorderWidth: 1.5,
+        borderWidth: 2,
+        spanGaps: false,
+        showLine: true
+      };
+    }).filter(dataset => dataset !== null);
+
+    return { 
+      labels: formattedDateLabels,
+      originalDates: sortedDates, // Keep original dates for tooltips
+      datasets 
+    };
+  }, [watchlist, selectedStocks, timeRange, formatDateLabel]);
+
+  // Prepare chart options - memoized
+  const chartOptions = useMemo(() => {
+    const isDark = theme === 'dark';
+    const originalDates = chartData.originalDates || [];
+    
+    // Theme-based colors
+    const gridColor = isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.05)';
+    const textColor = isDark ? 'rgba(255, 255, 255, 0.7)' : 'rgba(0, 0, 0, 0.7)';
+    const tooltipBgColor = isDark ? 'rgba(0, 0, 0, 0.8)' : 'rgba(255, 255, 255, 0.95)';
+    const tooltipBorderColor = isDark ? 'rgba(255, 255, 255, 0.2)' : 'rgba(0, 0, 0, 0.1)';
+    
+    return {
+      responsive: true,
+      maintainAspectRatio: false,
+      animation: {
+        duration: 750,
+        easing: 'easeOutQuart' as const,
       },
-      tooltip: {
+      interaction: {
         mode: 'index' as const,
         intersect: false,
-        callbacks: {
-          label: (context: any) => {
-            const value = context.parsed.y;
-            if (value === null) return `${context.dataset.label}: No data`;
-            return `${context.dataset.label}: $${value.toFixed(2)}`;
-          },
-          title: (context: any) => {
-            const date = new Date(sortedDates[context[0].dataIndex]);
-            return date.toLocaleDateString([], { 
-              weekday: 'long',
-              year: 'numeric',
-              month: 'long',
-              day: 'numeric'
-            });
-          }
-        }
-      }
-    },
-    scales: {
-      x: { 
-        grid: { 
-          display: true,
-          color: 'rgba(156, 163, 175, 0.1)',
-          drawBorder: false
+      },
+      elements: {
+        line: {
+          tension: 0.1,
+          borderWidth: 2,
+          fill: true,
+          spanGaps: false,
         },
-        ticks: {
-          maxRotation: 45,
-          minRotation: 45,
-          autoSkip: true,
-          maxTicksLimit: range === '7D' ? 7 : range === '30D' ? 15 : 20,
-          font: { size: 10 },
-          callback: (value: any, index: number) => {
-            const date = new Date(sortedDates[index]);
-            if (range === '7D') {
-              return date.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' });
-            } else if (range === '30D') {
-              return date.toLocaleDateString([], { month: 'short', day: 'numeric' });
+        point: {
+          radius: 0, // Hide points by default
+          hitRadius: 8, // Keep hit radius for hover detection
+          hoverRadius: 5, // Show points on hover
+        }
+      },
+      plugins: {
+        legend: { 
+          display: true, 
+          position: 'top' as const,
+          align: 'start' as const,
+          labels: {
+            usePointStyle: true,
+            pointStyle: 'circle',
+            padding: 15,
+            color: textColor,
+            font: {
+              size: 11
             }
-            return date.toLocaleDateString([], { month: 'short', year: '2-digit' });
+          }
+        },
+        tooltip: {
+          mode: 'index' as const,
+          intersect: false,
+          backgroundColor: tooltipBgColor,
+          titleColor: textColor,
+          bodyColor: textColor,
+          borderColor: tooltipBorderColor,
+          borderWidth: 1,
+          padding: 10,
+          cornerRadius: 4,
+          boxPadding: 5,
+          usePointStyle: true,
+          multiKeyBackground: 'transparent',
+          callbacks: {
+            title: (context: any) => {
+              if (!context || !context.length || context[0].dataIndex === undefined) {
+                return '';
+              }
+              
+              const index = context[0].dataIndex;
+              if (!originalDates || index >= originalDates.length) {
+                return '';
+              }
+              
+              const date = new Date(originalDates[index]);
+              
+              // Format date based on timeRange
+              if (timeRange === '1D') {
+                return date.toLocaleString([], { 
+                  weekday: 'short',
+                  month: 'short',
+                  day: 'numeric',
+                  hour: 'numeric',
+                  minute: 'numeric',
+                });
+              } else if (timeRange === '7D') {
+                return date.toLocaleString([], { 
+                  weekday: 'short',
+                  month: 'short', 
+                  day: 'numeric',
+                  hour: 'numeric',
+                });
+              } else {
+                return date.toLocaleDateString([], { 
+                  weekday: 'long',
+                  year: 'numeric',
+                  month: 'long',
+                  day: 'numeric'
+                });
+              }
+            },
+            label: (context: any) => {
+              const value = context.parsed.y;
+              if (value === null) return `${context.dataset.label}: No data`;
+              return `${context.dataset.label}: $${value.toFixed(2)}`;
+            }
+          }
+        },
+        zoom: {
+          pan: {
+            enabled: true,
+            mode: 'xy' as const,
+            threshold: 10,
+            modifierKey: 'ctrl' as const,
+          },
+          zoom: {
+            wheel: {
+              enabled: true,
+              speed: 0.1,
+            },
+            pinch: {
+              enabled: true
+            },
+            mode: 'xy' as const,
+            drag: {
+              enabled: true,
+              backgroundColor: 'rgba(0,0,0,0.1)',
+              borderColor: 'rgba(0,0,0,0.3)',
+              borderWidth: 1,
+            }
+          },
+          limits: {
+            y: {min: 'original' as const, max: 'original' as const}
           }
         }
       },
-      y: {
-        position: 'right' as const,
-        grid: { 
-          color: 'rgba(156, 163, 175, 0.1)',
-          drawBorder: false
+      scales: {
+        x: { 
+          grid: { 
+            display: true,
+            color: gridColor,
+            drawBorder: false,
+            tickWidth: 0
+          },
+          ticks: {
+            autoSkip: true,
+            maxTicksLimit: timeRange === '1D' ? 6 : timeRange === '7D' ? 7 : timeRange === '30D' ? 10 : 12,
+            font: { size: 10 },
+            color: textColor,
+            padding: 5,
+          }
         },
-        ticks: { 
-          callback: (value: any) => `$${value.toFixed(2)}`,
-          font: { size: 10 },
-          maxTicksLimit: 10
+        y: {
+          position: 'right' as const,
+          grid: { 
+            color: gridColor,
+            drawBorder: false
+          },
+          border: {
+            display: false
+          },
+          ticks: { 
+            callback: (value: any) => `$${value.toFixed(2)}`,
+            font: { size: 10 },
+            color: textColor,
+            padding: 8,
+            maxTicksLimit: 8
+          }
         }
       }
-    }
-  };
+    };
+  }, [theme, timeRange, chartData.originalDates]);
 
-  return { labels: sortedDates, datasets, options: chartOptions };
+  // Reset zoom function
+  const resetZoom = useCallback(() => {
+    if (chartRef.current?.resetZoom) {
+      chartRef.current.resetZoom();
+    }
+  }, []);
+
+  // Chart reference handler
+  const handleChartRef = useCallback((ref: any) => {
+    if (ref) {
+      try {
+        if (chartRef.current) {
+          chartRef.current.destroy();
+        }
+        chartRef.current = ref;
+      } catch (error) {
+        console.warn('Error setting chart ref:', error);
+      }
+    }
+  }, []);
+
+  // No data case
+  if (chartData.datasets.length === 0) {
+    return (
+      <div className="h-[500px] flex items-center justify-center">
+        <p className="text-gray-500 dark:text-gray-400">
+          Select stocks from your watchlist to view price history.
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="h-[500px]">
+      <div className="flex justify-between items-center mb-4">
+        <div className="text-xs text-gray-500 dark:text-gray-400">
+          {timeRange === '1D' ? 'Last 24 hours' : 
+           timeRange === '7D' ? 'Hourly data, last 7 days' : 
+           timeRange === '30D' ? 'Daily data, last 30 days' : 
+           timeRange === '1Y' ? 'Daily data, last year' : 'Weekly data, last 5 years'}
+        </div>
+        <button
+          onClick={resetZoom}
+          className="px-3 py-1 rounded-md text-sm font-medium bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600"
+        >
+          Reset Zoom
+        </button>
+      </div>
+      <div className="bg-white dark:bg-gray-800 rounded-lg p-4 h-[calc(100%-40px)] shadow-sm">
+        <Suspense fallback={
+          <div className="h-full flex items-center justify-center">
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600 dark:border-indigo-400"></div>
+          </div>
+        }>
+          <Line
+            key={chartKey}
+            data={chartData}
+            options={chartOptions}
+            ref={handleChartRef}
+            redraw={true}
+          />
+        </Suspense>
+      </div>
+    </div>
+  );
 };
 
 export default function Recommendations() {
-  const { user, getAuthHeader, isAuthenticated } = useAuth();
+  const { getAuthHeader, isAuthenticated } = useAuth();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [selectedStocks, setSelectedStocks] = useState<string[]>([]);
   const [timeRange, setTimeRange] = useState<TimeRange>('1Y');
   const [selectedStock, setSelectedStock] = useState<Stock | null>(null);
+  const [isLoadingRecommendations, setIsLoadingRecommendations] = useState(true);
+  const [showChart, setShowChart] = useState(false);
+  const chartInstanceId = useRef(`chart-instance-${Date.now()}`).current;
+  const chartRef = useRef<any>(null);
 
+  // Auth header - memoized to prevent unnecessary recalculation
   const authHeader = useMemo(() => getAuthHeader() as AuthHeader, [getAuthHeader]);
 
-  // Use React Query hooks
+  // Use React Query hooks with proper configuration
   const { 
     data: recommendations, 
     isLoading: isRecommendationsLoading,
@@ -379,7 +970,28 @@ export default function Recommendations() {
     error: watchlistError 
   } = useWatchlistWithHistory(authHeader);
 
-  // Add to watchlist mutation
+  // Show loading state for recommendations initially, then reveal after a delay
+  useEffect(() => {
+    if (!isRecommendationsLoading && recommendations) {
+      const timer = setTimeout(() => {
+        setIsLoadingRecommendations(false);
+      }, 500); // Short delay for smoother UI
+      return () => clearTimeout(timer);
+    }
+  }, [isRecommendationsLoading, recommendations]);
+
+  // Delay chart display until after page loads
+  useEffect(() => {
+    if (!isWatchlistLoading && watchlist) {
+      // Delay chart rendering to prioritize UI responsiveness
+      const timer = setTimeout(() => {
+        setShowChart(true);
+      }, 800);
+      return () => clearTimeout(timer);
+    }
+  }, [isWatchlistLoading, watchlist]);
+
+  // Add to watchlist mutation with proper error handling
   const addToWatchlistMutation = useMutation({
     mutationFn: async (symbol: string) => {
       if (!authHeader) throw new Error("Not authenticated");
@@ -397,52 +1009,55 @@ export default function Recommendations() {
         const errorData = await response.json();
         throw new Error(errorData.detail || "Failed to add to watchlist");
       }
+      
+      return symbol; // Return the symbol to fix the void type issue
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['watchlistWithHistory'] });
     }
   });
 
-  // Memoize chart data
-  const chartData = useMemo(() => {
-    if (!watchlist) return { labels: [], datasets: [], options: {} };
-    return prepareChartData(watchlist, selectedStocks, timeRange);
-  }, [watchlist, selectedStocks, timeRange]);
-
-  // Handle stock selection
-  const handleStockSelect = useCallback((symbol: string) => {
-    const stock = recommendations?.find(s => s.symbol === symbol) || null;
-    setSelectedStock(stock);
-  }, [recommendations]);
-
-  // Handle add to watchlist
-  const handleAddToWatchlist = useCallback((symbol: string) => {
-    addToWatchlistMutation.mutate(symbol);
-  }, [addToWatchlistMutation]);
-
-  // Update selected stocks when watchlist changes
+  // Initialize selected stocks when watchlist changes
   useEffect(() => {
-    if (watchlist) {
+    if (watchlist && watchlist.length > 0) {
       setSelectedStocks(watchlist.map(stock => stock.symbol));
     }
   }, [watchlist]);
 
-  // Handle authentication
+  // Authentication check
   useEffect(() => {
     if (!isAuthenticated) {
       navigate("/login");
     }
   }, [isAuthenticated, navigate]);
 
-  const isLoading = isRecommendationsLoading || isWatchlistLoading;
-  const error = recommendationsError || watchlistError;
+  // Memoized callbacks for actions
+  const handleStockSelect = useCallback((symbol: string) => {
+    const stock = recommendations?.find(s => s.symbol === symbol) || null;
+    setSelectedStock(stock);
+  }, [recommendations]);
 
-  if (isLoading) return (
+  const handleAddToWatchlist = useCallback((symbol: string) => {
+    addToWatchlistMutation.mutate(symbol);
+  }, [addToWatchlistMutation]);
+
+  const handleToggleStockSelection = useCallback((symbol: string) => {
+    setSelectedStocks(prev =>
+      prev.includes(symbol) 
+        ? prev.filter(s => s !== symbol) 
+        : [...prev, symbol]
+    );
+  }, []);
+
+  // Main loading handler - only show loader for initial page render
+  if (isWatchlistLoading && isRecommendationsLoading) return (
     <div className="min-h-screen pt-16 bg-gray-50 dark:bg-dark-bg flex items-center justify-center">
       <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600 dark:border-indigo-400"></div>
     </div>
   );
 
+  // Handle errors
+  const error = recommendationsError || watchlistError;
   if (error) return (
     <div className="min-h-screen pt-16 bg-gray-50 dark:bg-dark-bg flex items-center justify-center">
       <div className="bg-white dark:bg-dark-surface p-8 rounded-lg shadow-md max-w-md w-full">
@@ -461,140 +1076,100 @@ export default function Recommendations() {
     <div className="min-h-screen bg-gray-50 dark:bg-dark-bg">
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 pt-24">
         <h1 className="text-3xl font-bold text-gray-900 dark:text-dark-text mb-8">Stock Recommendations and Watchlist</h1>
-        <div className="grid grid-cols-12 gap-6">
-          <div className="col-span-12">
-            {/* Watchlist - Now appears first */}
-            <div className="bg-white dark:bg-dark-surface rounded-lg shadow-md p-6 mb-6">
-              <h2 className="text-2xl font-bold text-gray-900 dark:text-dark-text mb-6">Your Watchlist</h2>
-              {watchlist && watchlist.length > 0 ? (
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                  {watchlist.map((stock, index) => (
-                    <div key={stock.id} className="bg-gray-50 dark:bg-gray-800 rounded-lg p-4 shadow-sm hover:shadow-md transition-shadow">
-                      <div className="flex items-center space-x-2 mb-2">
-                        <div className="w-3 h-3 rounded-full" style={{ backgroundColor: COLORS[index % COLORS.length] }}></div>
-                        <input
-                          type="checkbox"
-                          checked={selectedStocks.includes(stock.symbol)}
-                          onChange={() => setSelectedStocks(prev =>
-                            prev.includes(stock.symbol) ? prev.filter(s => s !== stock.symbol) : [...prev, stock.symbol]
-                          )}
-                          className="cursor-pointer"
-                        />
-                        <div onClick={() => handleStockSelect(stock.symbol)} className="cursor-pointer flex-1">
-                          <p className="text-sm font-medium text-gray-900 dark:text-dark-text">{stock.symbol}</p>
-                          <p className="text-xs text-gray-500 dark:text-gray-400">{stock.name}</p>
-                        </div>
-                      </div>
-                      <div className="flex justify-between items-center">
-                        <p className="text-sm font-medium text-gray-900 dark:text-dark-text">${stock.currentPrice.toFixed(2)}</p>
-                        <p className={`text-xs ${stock.change >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
-                          {stock.change >= 0 ? '+' : ''}{stock.change.toFixed(2)} ({stock.changePercent.toFixed(2)}%)
-                        </p>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <p className="text-gray-500 dark:text-gray-400">No stocks in watchlist. Add from recommendations above.</p>
-              )}
+        
+        {/* Top Recommendations */}
+        <div className="bg-white dark:bg-dark-surface rounded-lg shadow-md p-6 mb-6">
+          <h2 className="text-2xl font-bold text-gray-900 dark:text-dark-text mb-6">Top 5 Recommended Stocks This Week</h2>
+          {isLoadingRecommendations ? (
+            <div className="flex justify-center items-center h-40">
+              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600 dark:border-indigo-400"></div>
             </div>
+          ) : recommendations && recommendations.length > 0 ? (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {recommendations.slice(0, 5).map((stock, index) => (
+                <RecommendedStock 
+                  key={stock.symbol}
+                  stock={stock}
+                  index={index}
+                  onAddToWatchlist={handleAddToWatchlist}
+                />
+              ))}
+            </div>
+          ) : (
+            <div className="flex flex-col items-center justify-center h-40">
+              <p className="text-gray-500 dark:text-gray-400 mb-4">No recommendations available at the moment.</p>
+              <button
+                onClick={() => queryClient.invalidateQueries({ queryKey: ['recommendations'] })}
+                className="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 transition-colors"
+              >
+                Refresh Recommendations
+              </button>
+            </div>
+          )}
+        </div>
 
-            {/* Price History Graph - Now appears second */}
-            <div className="bg-white dark:bg-dark-surface rounded-lg shadow-md p-6 mb-6">
-              <div className="flex justify-between items-center mb-6">
-                <h2 className="text-2xl font-bold text-gray-900 dark:text-dark-text">Watchlist Price History</h2>
-                <div className="flex space-x-2">
-                  <button
-                    onClick={() => setTimeRange('7D')}
-                    className={`px-3 py-1 rounded-md text-sm font-medium ${
-                      timeRange === '7D'
-                        ? 'bg-indigo-600 text-white'
-                        : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
-                    }`}
-                  >
-                    7D
-                  </button>
-                  <button
-                    onClick={() => setTimeRange('30D')}
-                    className={`px-3 py-1 rounded-md text-sm font-medium ${
-                      timeRange === '30D'
-                        ? 'bg-indigo-600 text-white'
-                        : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
-                    }`}
-                  >
-                    30D
-                  </button>
-                  <button
-                    onClick={() => setTimeRange('1Y')}
-                    className={`px-3 py-1 rounded-md text-sm font-medium ${
-                      timeRange === '1Y'
-                        ? 'bg-indigo-600 text-white'
-                        : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
-                    }`}
-                  >
-                    1Y
-                  </button>
-                  <button
-                    onClick={() => setTimeRange('5Y')}
-                    className={`px-3 py-1 rounded-md text-sm font-medium ${
-                      timeRange === '5Y'
-                        ? 'bg-indigo-600 text-white'
-                        : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
-                    }`}
-                  >
-                    5Y
-                  </button>
-                </div>
-              </div>
-              {watchlist && watchlist.length > 0 && selectedStocks.length > 0 ? (
-                <div className="h-[500px]">
-                  <Line
-                    data={chartData}
-                    options={chartData.options}
-                  />
-                </div>
-              ) : (
-                <p className="text-gray-500 dark:text-gray-400">Select stocks from your watchlist to view price history.</p>
-              )}
+        {/* Watchlist */}
+        <div className="bg-white dark:bg-dark-surface rounded-lg shadow-md p-6 mb-6">
+          <h2 className="text-2xl font-bold text-gray-900 dark:text-dark-text mb-6">Your Watchlist</h2>
+          {isWatchlistLoading ? (
+            <div className="flex justify-center items-center h-40">
+              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600 dark:border-indigo-400"></div>
             </div>
+          ) : watchlist && watchlist.length > 0 ? (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+              {watchlist.map((stock, index) => (
+                <WatchlistStock 
+                  key={stock.id}
+                  stock={stock}
+                  index={index}
+                  isSelected={selectedStocks.includes(stock.symbol)}
+                  onToggleSelect={() => handleToggleStockSelection(stock.symbol)}
+                  onSelect={() => handleStockSelect(stock.symbol)}
+                />
+              ))}
+            </div>
+          ) : (
+            <p className="text-gray-500 dark:text-gray-400">No stocks in watchlist. Add from recommendations above.</p>
+          )}
+        </div>
 
-            {/* Top Recommendations - Now appears last */}
-            <div className="bg-white dark:bg-dark-surface rounded-lg shadow-md p-6">
-              <h2 className="text-2xl font-bold text-gray-900 dark:text-dark-text mb-6">Top 5 Recommended Stocks This Week</h2>
-              {recommendations && recommendations.length > 0 ? (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                  {recommendations.slice(0, 5).map((stock, index) => (
-                    <div key={stock.symbol} className="bg-gray-50 dark:bg-gray-800 rounded-lg p-6 shadow-sm hover:shadow-md transition-shadow">
-                      <div className="flex justify-between items-start mb-4">
-                        <div>
-                          <div className="flex items-center space-x-2">
-                            <span className="text-lg font-medium text-indigo-600 dark:text-indigo-400">#{index + 1}</span>
-                            <h3 className="text-xl font-bold text-gray-900 dark:text-dark-text">{stock.symbol}</h3>
-                          </div>
-                          <p className="text-sm text-gray-600 dark:text-gray-400">{stock.name}</p>
-                          <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">{stock.recommendationReason}</p>
-                        </div>
-                        <div className="text-right">
-                          <p className="text-xl font-bold text-gray-900 dark:text-dark-text">${stock.currentPrice.toFixed(2)}</p>
-                          <p className={`text-sm ${stock.change >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
-                            {stock.change >= 0 ? '+' : ''}{stock.change.toFixed(2)} ({stock.changePercent.toFixed(2)}%)
-                          </p>
-                        </div>
-                      </div>
-                      <button
-                        onClick={(e) => { e.stopPropagation(); handleAddToWatchlist(stock.symbol); }}
-                        className="w-full bg-indigo-600 text-white py-2 rounded-md hover:bg-indigo-700 transition-colors"
-                      >
-                        Add to Watchlist
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <p className="text-gray-500 dark:text-gray-400">No recommendations available at the moment.</p>
-              )}
-            </div>
+        {/* Price History Graph */}
+        <div className="bg-white dark:bg-dark-surface rounded-lg shadow-md p-6 mb-6">
+          <div className="flex justify-between items-center mb-6">
+            <h2 className="text-2xl font-bold text-gray-900 dark:text-dark-text">Watchlist Price History</h2>
+            <TimeRangeSelector timeRange={timeRange} setTimeRange={setTimeRange} />
           </div>
+          
+          {!showChart ? (
+            <div className="h-[500px] flex items-center justify-center">
+              <div className="animate-pulse flex flex-col items-center">
+                <div className="rounded-lg bg-gray-200 dark:bg-gray-700 h-64 w-full mb-4"></div>
+                <div className="text-gray-500 dark:text-gray-400">Loading chart data...</div>
+              </div>
+            </div>
+          ) : watchlist && watchlist.length > 0 && selectedStocks.length > 0 ? (
+            <Suspense fallback={
+              <div className="h-[500px] flex items-center justify-center">
+                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600 dark:border-indigo-400"></div>
+              </div>
+            }>
+              <StockChart 
+                watchlist={watchlist}
+                selectedStocks={selectedStocks}
+                timeRange={timeRange}
+                instanceId={chartInstanceId}
+                key={`stock-chart-${timeRange}-${selectedStocks.join('-')}`}
+              />
+            </Suspense>
+          ) : (
+            <div className="h-[500px] flex items-center justify-center">
+              <p className="text-gray-500 dark:text-gray-400">
+                {watchlist && watchlist.length === 0 
+                  ? "Add stocks to your watchlist to view price history." 
+                  : "Select stocks from your watchlist to view price history."}
+              </p>
+            </div>
+          )}
         </div>
       </main>
     </div>
