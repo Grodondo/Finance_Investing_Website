@@ -21,6 +21,7 @@ import zoomPlugin from 'chartjs-plugin-zoom';
 import 'chartjs-adapter-date-fns';
 // Import the Line chart lazily
 const Line = lazy(() => import("react-chartjs-2").then(module => ({ default: module.Line })));
+import { useTranslation } from 'react-i18next';
 
 // Register Chart.js components once
 ChartJS.register(
@@ -470,38 +471,42 @@ const RecommendedStock = ({
   index: number;
   onAddToWatchlist: (symbol: string) => void;
   isInWatchlist: boolean;
-}) => (
-  <div className="bg-gray-50 dark:bg-gray-800 rounded-lg p-6 shadow-sm hover:shadow-md transition-shadow">
-    <div className="flex justify-between items-start mb-4">
-      <div>
-        <div className="flex items-center space-x-2">
-          <span className="text-lg font-medium text-indigo-600 dark:text-indigo-400">#{index + 1}</span>
-          <h3 className="text-xl font-bold text-gray-900 dark:text-dark-text">{stock.symbol}</h3>
+}) => {
+  const { t } = useTranslation();
+  
+  return (
+    <div className="bg-gray-50 dark:bg-gray-800 rounded-lg p-6 shadow-sm hover:shadow-md transition-shadow">
+      <div className="flex justify-between items-start mb-4">
+        <div>
+          <div className="flex items-center space-x-2">
+            <span className="text-lg font-medium text-indigo-600 dark:text-indigo-400">#{index + 1}</span>
+            <h3 className="text-xl font-bold text-gray-900 dark:text-dark-text">{stock.symbol}</h3>
+          </div>
+          <p className="text-sm text-gray-600 dark:text-gray-400">{stock.name}</p>
+          <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">{stock.recommendationReason}</p>
         </div>
-        <p className="text-sm text-gray-600 dark:text-gray-400">{stock.name}</p>
-        <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">{stock.recommendationReason}</p>
+        <div className="text-right">
+          <p className="text-xl font-bold text-gray-900 dark:text-dark-text">${stock.currentPrice.toFixed(2)}</p>
+          <p className={`text-sm ${stock.change >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
+            {stock.change >= 0 ? '+' : ''}{stock.change.toFixed(2)} ({stock.changePercent.toFixed(2)}%)
+          </p>
+        </div>
       </div>
-      <div className="text-right">
-        <p className="text-xl font-bold text-gray-900 dark:text-dark-text">${stock.currentPrice.toFixed(2)}</p>
-        <p className={`text-sm ${stock.change >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
-          {stock.change >= 0 ? '+' : ''}{stock.change.toFixed(2)} ({stock.changePercent.toFixed(2)}%)
-        </p>
-      </div>
+      {isInWatchlist ? (
+        <div className="w-full bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 py-2 text-center rounded-md font-medium">
+          {t('recommendations.inWatchlist')}
+        </div>
+      ) : (
+        <button
+          onClick={(e) => { e.stopPropagation(); onAddToWatchlist(stock.symbol); }}
+          className="w-full bg-indigo-600 text-white py-2 rounded-md hover:bg-indigo-700 transition-colors"
+        >
+          {t('recommendations.addToWatchlist')}
+        </button>
+      )}
     </div>
-    {isInWatchlist ? (
-      <div className="w-full bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 py-2 text-center rounded-md font-medium">
-        In Watchlist
-      </div>
-    ) : (
-      <button
-        onClick={(e) => { e.stopPropagation(); onAddToWatchlist(stock.symbol); }}
-        className="w-full bg-indigo-600 text-white py-2 rounded-md hover:bg-indigo-700 transition-colors"
-      >
-        Add to Watchlist
-      </button>
-    )}
-  </div>
-);
+  );
+};
 
 // Watchlist Stock component
 const WatchlistStock = ({ 
@@ -993,6 +998,7 @@ export default function Recommendations() {
   const { isAuthenticated, getAuthHeader } = useAuth();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const { t } = useTranslation();
   
   // Get auth header for API requests
   const authHeader = useMemo(() => getAuthHeader() as AuthHeader, [getAuthHeader]);
@@ -1147,14 +1153,14 @@ export default function Recommendations() {
         {/* Recommended Stocks Section */}
         <section className="mb-12">
           <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-6">
-            Top 5 Recommended Stocks This Week
+            {t('recommendations.title')}
           </h2>
           
           {/* Recommendations grid */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {hasError ? (
               <div className="col-span-full bg-red-50 dark:bg-red-900/20 p-4 rounded-md text-red-800 dark:text-red-200">
-                <p>Error loading recommendations. Please try again later.</p>
+                <p>{t('recommendations.errorLoading')}</p>
               </div>
             ) : !isPageLoaded || isRecommendationsLoading ? (
               // Show skeleton loaders while loading
@@ -1177,8 +1183,12 @@ export default function Recommendations() {
                 <svg className="mx-auto h-12 w-12 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
                 </svg>
-                <h3 className="mt-2 text-lg font-medium text-gray-900 dark:text-white">No recommendations available at the moment</h3>
-                <p className="mt-1 text-gray-500 dark:text-gray-400">Check back later for updated stock recommendations.</p>
+                <h3 className="mt-2 text-lg font-medium text-gray-900 dark:text-white">
+                  {t('recommendations.noRecommendations')}
+                </h3>
+                <p className="mt-1 text-gray-500 dark:text-gray-400">
+                  {t('recommendations.checkBack')}
+                </p>
               </div>
             )}
           </div>
@@ -1188,7 +1198,7 @@ export default function Recommendations() {
         <section className="mb-12">
           <div className="flex items-center justify-between mb-6">
             <h2 className="text-2xl font-bold text-gray-900 dark:text-white">
-              Your Watchlist
+              {t('recommendations.yourWatchlist')}
             </h2>
             
             {/* Time range selector for charts */}
@@ -1202,20 +1212,22 @@ export default function Recommendations() {
           <div className="mb-8">
             {hasError ? (
               <div className="bg-red-50 dark:bg-red-900/20 p-4 rounded-md text-red-800 dark:text-red-200">
-                <p>Error loading watchlist data. Please try again later.</p>
+                <p>{t('recommendations.errorLoadingWatchlist')}</p>
               </div>
             ) : !isPageLoaded || isWatchlistLoading || selectedStocks.length === 0 ? (
               !isPageLoaded || isWatchlistLoading ? (
                 <ChartSkeleton />
               ) : (
                 <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 text-center">
-                  <p className="text-gray-600 dark:text-gray-300">Select stocks from your watchlist to view their performance.</p>
+                  <p className="text-gray-600 dark:text-gray-300">
+                    {t('recommendations.selectStocks')}
+                  </p>
                 </div>
               )
             ) : (
               <div className="bg-white dark:bg-gray-800 p-4 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700">
                 <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
-                  Performance Comparison
+                  {t('recommendations.performanceComparison')}
                 </h3>
                 <Suspense fallback={<ChartSkeleton />}>
                   <StockChart
@@ -1233,7 +1245,7 @@ export default function Recommendations() {
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {hasError ? (
               <div className="col-span-full bg-red-50 dark:bg-red-900/20 p-4 rounded-md text-red-800 dark:text-red-200">
-                <p>Error loading watchlist. Please try again later.</p>
+                <p>{t('recommendations.errorLoadingWatchlist')}</p>
               </div>
             ) : !isPageLoaded || isWatchlistLoading ? (
               // Show skeleton loaders while loading
@@ -1257,8 +1269,12 @@ export default function Recommendations() {
                 <svg className="mx-auto h-12 w-12 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
                 </svg>
-                <h3 className="mt-2 text-lg font-medium text-gray-900 dark:text-white">No stocks in your watchlist</h3>
-                <p className="mt-1 text-gray-500 dark:text-gray-400">Add stocks from the recommendations to track their performance.</p>
+                <h3 className="mt-2 text-lg font-medium text-gray-900 dark:text-white">
+                  {t('recommendations.noStocks')}
+                </h3>
+                <p className="mt-1 text-gray-500 dark:text-gray-400">
+                  {t('recommendations.addStocks')}
+                </p>
               </div>
             )}
           </div>
