@@ -10,6 +10,7 @@ import Investing from "./routes/investing";
 import About from "./routes/about";
 import Recommendations from "./routes/recommendations";
 import Profile from "./routes/profile";
+import News from "./routes/news";
 
 export const router = createBrowserRouter([
   {
@@ -36,6 +37,11 @@ export const router = createBrowserRouter([
       {
         path: "investing",
         element: <Investing />,
+        errorElement: <ErrorPage />,
+      },
+      {
+        path: "news",
+        element: <News />,
         errorElement: <ErrorPage />,
       },
       {

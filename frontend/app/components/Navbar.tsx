@@ -142,6 +142,9 @@ export default function Navbar() {
               <Link to="/investing" className={navLinkClass("/investing")}>
                 Investing
               </Link>
+              <Link to="/news" className={navLinkClass("/news")}>
+                News
+              </Link>
               <Link to="/recommendations" className={navLinkClass("/recommendations")}>
                 Recommendations
               </Link>
@@ -232,6 +235,9 @@ export default function Navbar() {
           </Link>
           <Link to="/investing" className={mobileNavLinkClass("/investing")}>
             Investing
+          </Link>
+          <Link to="/news" className={mobileNavLinkClass("/news")}>
+            News
           </Link>
           <Link to="/recommendations" className={mobileNavLinkClass("/recommendations")}>
             Recommendations

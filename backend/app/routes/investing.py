@@ -18,6 +18,7 @@ from ..schemas.investing import (
     Watchlist as WatchlistSchema,
     WatchlistItem,
     StockSearchResult,
+    NewsItem,
 )
 from ..models.user import User
 
@@ -34,6 +35,11 @@ MAX_REQUESTS_PER_WINDOW = 5  # Maximum requests per minute
 BACKOFF_PERIOD = 30  # 30 seconds backoff when rate limited
 last_request_times: List[float] = []
 rate_limited_until: Optional[float] = None  # Timestamp until which we're rate limited
+
+# News cache to avoid frequent API calls
+news_cache: Dict[str, tuple[List[NewsItem], datetime]] = {}
+MARKET_NEWS_CACHE_KEY = "market_news"
+NEWS_CACHE_DURATION = timedelta(minutes=30)  # Cache news for 30 minutes
 
 def check_rate_limit() -> bool:
     """Check if we're within rate limits"""
@@ -761,3 +767,220 @@ async def remove_from_watchlist(
     db.commit()
     
     return {"message": "Stock removed from watchlist"}
+
+@router.get("/news/market", response_model=List[NewsItem])
+async def get_market_news(
+    db: Session = Depends(get_db),
+    token: dict = Depends(verify_token)
+):
+    """Get the latest general market news"""
+    try:
+        # Check cache first
+        current_time = datetime.utcnow()
+        if MARKET_NEWS_CACHE_KEY in news_cache:
+            cached_news, cache_time = news_cache[MARKET_NEWS_CACHE_KEY]
+            if current_time - cache_time < NEWS_CACHE_DURATION:
+                logger.info("Returning cached market news")
+                return cached_news
+        
+        logger.info("Fetching fresh market news")
+        # Use Yahoo Finance to get market news
+        market_tickers = ["^GSPC", "^DJI", "^IXIC"]  # S&P 500, Dow Jones, NASDAQ
+        news_items = []
+        
+        for ticker_symbol in market_tickers:
+            ticker = yf.Ticker(ticker_symbol)
+            try:
+                ticker_news = ticker.news
+                if ticker_news:
+                    for item in ticker_news:
+                        try:
+                            news_items.append(NewsItem(
+                                title=item.get('title'),
+                                publisher=item.get('publisher'),
+                                link=item.get('link'),
+                                published_date=datetime.fromtimestamp(item.get('providerPublishTime', 0)),
+                                summary=item.get('summary'),
+                                thumbnail=item.get('thumbnail', {}).get('resolutions', [{}])[0].get('url'),
+                                related_symbols=item.get('relatedTickers', [])
+                            ))
+                        except Exception as e:
+                            logger.error(f"Error processing news item: {str(e)}")
+            except Exception as e:
+                logger.error(f"Error fetching news for {ticker_symbol}: {str(e)}")
+        
+        # Sort by publication date (newest first) and remove duplicates
+        unique_news = {}
+        for item in news_items:
+            if item.title not in unique_news:
+                unique_news[item.title] = item
+        
+        sorted_news = sorted(
+            unique_news.values(), 
+            key=lambda x: x.published_date, 
+            reverse=True
+        )
+        
+        # Cache the results
+        news_cache[MARKET_NEWS_CACHE_KEY] = (sorted_news, current_time)
+        
+        return sorted_news[:20]  # Return top 20 news
+    except Exception as e:
+        logger.error(f"Error getting market news: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to get market news: {str(e)}"
+        )
+
+@router.get("/news/watchlist", response_model=List[NewsItem])
+async def get_watchlist_news(
+    db: Session = Depends(get_db),
+    token: dict = Depends(verify_token)
+):
+    """Get news related to stocks in the user's watchlist"""
+    try:
+        # Get user from token
+        user = db.query(User).filter(User.email == token["sub"]).first()
+        if not user:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="User not found"
+            )
+        
+        # Get user's watchlist
+        watchlist_items = db.query(Watchlist).filter(Watchlist.user_id == user.id).all()
+        if not watchlist_items:
+            return []
+        
+        # Get stock symbols from watchlist
+        stock_ids = [item.stock_id for item in watchlist_items]
+        stocks = db.query(Stock).filter(Stock.id.in_(stock_ids)).all()
+        symbols = [stock.symbol for stock in stocks]
+        
+        # Check cache first
+        cache_key = f"watchlist_news_{'-'.join(sorted(symbols))}"
+        current_time = datetime.utcnow()
+        if cache_key in news_cache:
+            cached_news, cache_time = news_cache[cache_key]
+            if current_time - cache_time < NEWS_CACHE_DURATION:
+                logger.info(f"Returning cached watchlist news for {symbols}")
+                return cached_news
+        
+        logger.info(f"Fetching fresh news for watchlist stocks: {symbols}")
+        news_items = []
+        
+        # Fetch news for each symbol in the watchlist
+        for symbol in symbols:
+            try:
+                # Cache key for individual stock news
+                stock_cache_key = f"stock_news_{symbol}"
+                
+                # Check if this stock's news is in cache
+                if stock_cache_key in news_cache:
+                    stock_news, cache_time = news_cache[stock_cache_key]
+                    if current_time - cache_time < NEWS_CACHE_DURATION:
+                        logger.info(f"Using cached news for {symbol}")
+                        news_items.extend(stock_news)
+                        continue
+                
+                logger.info(f"Fetching fresh news for {symbol}")
+                ticker = yf.Ticker(symbol)
+                ticker_news = ticker.news
+                
+                stock_news = []
+                if ticker_news:
+                    for item in ticker_news:
+                        try:
+                            news_item = NewsItem(
+                                title=item.get('title'),
+                                publisher=item.get('publisher'),
+                                link=item.get('link'),
+                                published_date=datetime.fromtimestamp(item.get('providerPublishTime', 0)),
+                                summary=item.get('summary'),
+                                thumbnail=item.get('thumbnail', {}).get('resolutions', [{}])[0].get('url'),
+                                related_symbols=item.get('relatedTickers', [])
+                            )
+                            stock_news.append(news_item)
+                        except Exception as e:
+                            logger.error(f"Error processing news item for {symbol}: {str(e)}")
+                
+                # Cache individual stock news
+                news_cache[stock_cache_key] = (stock_news, current_time)
+                news_items.extend(stock_news)
+                
+            except Exception as e:
+                logger.error(f"Error fetching news for {symbol}: {str(e)}")
+        
+        # Sort by publication date (newest first) and remove duplicates
+        unique_news = {}
+        for item in news_items:
+            if item.title not in unique_news:
+                unique_news[item.title] = item
+        
+        sorted_news = sorted(
+            unique_news.values(), 
+            key=lambda x: x.published_date, 
+            reverse=True
+        )
+        
+        # Cache the combined results
+        news_cache[cache_key] = (sorted_news, current_time)
+        
+        return sorted_news[:30]  # Return top 30 news
+    except Exception as e:
+        logger.error(f"Error getting watchlist news: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to get watchlist news: {str(e)}"
+        )
+
+@router.get("/news/stock/{symbol}", response_model=List[NewsItem])
+async def get_stock_news(
+    symbol: str,
+    db: Session = Depends(get_db),
+    token: dict = Depends(verify_token)
+):
+    """Get news for a specific stock"""
+    try:
+        # Check cache first
+        cache_key = f"stock_news_{symbol}"
+        current_time = datetime.utcnow()
+        if cache_key in news_cache:
+            cached_news, cache_time = news_cache[cache_key]
+            if current_time - cache_time < NEWS_CACHE_DURATION:
+                logger.info(f"Returning cached news for {symbol}")
+                return cached_news
+        
+        logger.info(f"Fetching fresh news for {symbol}")
+        ticker = yf.Ticker(symbol)
+        ticker_news = ticker.news
+        
+        news_items = []
+        if ticker_news:
+            for item in ticker_news:
+                try:
+                    news_items.append(NewsItem(
+                        title=item.get('title'),
+                        publisher=item.get('publisher'),
+                        link=item.get('link'),
+                        published_date=datetime.fromtimestamp(item.get('providerPublishTime', 0)),
+                        summary=item.get('summary'),
+                        thumbnail=item.get('thumbnail', {}).get('resolutions', [{}])[0].get('url'),
+                        related_symbols=item.get('relatedTickers', [])
+                    ))
+                except Exception as e:
+                    logger.error(f"Error processing news item for {symbol}: {str(e)}")
+        
+        # Sort by publication date (newest first)
+        sorted_news = sorted(news_items, key=lambda x: x.published_date, reverse=True)
+        
+        # Cache the results
+        news_cache[cache_key] = (sorted_news, current_time)
+        
+        return sorted_news
+    except Exception as e:
+        logger.error(f"Error getting news for {symbol}: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to get news for {symbol}: {str(e)}"
+        )

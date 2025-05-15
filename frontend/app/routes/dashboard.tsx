@@ -26,9 +26,18 @@ import {
   StarIcon,
   BellIcon,
 } from "@heroicons/react/24/outline";
+import React from "react";
 
 // Import chart components lazily
-const Line = lazy(() => import("react-chartjs-2").then(module => ({ default: module.Line })));
+const Line = lazy(() => import("react-chartjs-2").then(module => ({ 
+  default: React.memo(module.Line, (prevProps, nextProps) => {
+    // Custom comparison function to prevent unnecessary re-renders
+    return (
+      prevProps.data === nextProps.data &&
+      prevProps.options === nextProps.options
+    );
+  })
+})));
 const Bar = lazy(() => import("react-chartjs-2").then(module => ({ default: module.Bar })));
 
 // Register zoom plugin
@@ -167,7 +176,11 @@ const useTransactions = (authHeader: AuthHeader) => {
       return response.json() as Promise<Transaction[]>;
     },
     enabled: !!authHeader,
-    staleTime: 30000,
+    staleTime: 30000, // 30 seconds
+    gcTime: 5 * 60 * 1000, // 5 minutes
+    refetchOnWindowFocus: false,
+    refetchOnMount: false,
+    refetchOnReconnect: false
   });
 };
 
@@ -186,7 +199,11 @@ const useFinancialInsights = (authHeader: AuthHeader) => {
       return response.json() as Promise<FinancialInsights>;
     },
     enabled: !!authHeader,
-    staleTime: 30000,
+    staleTime: 30000, // 30 seconds
+    gcTime: 5 * 60 * 1000, // 5 minutes
+    refetchOnWindowFocus: false,
+    refetchOnMount: false,
+    refetchOnReconnect: false
   });
 };
 
@@ -220,57 +237,78 @@ const useWatchlistWithHistory = (authHeader: AuthHeader) => {
         historicalData: []
       }));
 
-      const watchlistWithHistory = await Promise.all(
-        normalizedWatchlist.map(async (stock: WatchlistStock) => {
-          try {
-            const response = await fetch(`/api/stocks/${stock.symbol}`, {
-              headers: {
-                ...authHeader,
-                "Content-Type": "application/json"
+      // Fetch historical data in parallel with a concurrency limit
+      const concurrencyLimit = 3;
+      const chunks = [];
+      for (let i = 0; i < normalizedWatchlist.length; i += concurrencyLimit) {
+        chunks.push(normalizedWatchlist.slice(i, i + concurrencyLimit));
+      }
+
+      const watchlistWithHistory: WatchlistStock[] = [];
+      for (const chunk of chunks) {
+        const chunkResults = await Promise.all(
+          chunk.map(async (stock: WatchlistStock) => {
+            try {
+              const response = await fetch(`/api/stocks/${stock.symbol}`, {
+                headers: {
+                  ...authHeader,
+                  "Content-Type": "application/json"
+                }
+              });
+              if (response.ok) {
+                const stockData = await response.json();
+                return {
+                  ...stock,
+                  currentPrice: stockData.current_price || stock.currentPrice,
+                  change: stockData.change || stock.change,
+                  changePercent: stockData.change_percent || stock.changePercent,
+                  volume: stockData.volume || stock.volume,
+                  marketCap: stockData.market_cap || stock.marketCap,
+                  historicalData: stockData.historical_data?.map((point: any) => ({
+                    date: point.date,
+                    price: point.price,
+                    is_intraday: point.date.includes(' ')
+                  })) || []
+                };
               }
-            });
-            if (response.ok) {
-              const stockData = await response.json();
-              return {
-                ...stock,
-                currentPrice: stockData.current_price || stock.currentPrice,
-                change: stockData.change || stock.change,
-                changePercent: stockData.change_percent || stock.changePercent,
-                volume: stockData.volume || stock.volume,
-                marketCap: stockData.market_cap || stock.marketCap,
-                historicalData: stockData.historical_data?.map((point: any) => ({
-                  date: point.date,
-                  price: point.price,
-                  is_intraday: point.date.includes(' ')
-                })) || []
-              };
+              return stock;
+            } catch {
+              return stock;
             }
-            return stock;
-          } catch {
-            return stock;
-          }
-        })
-      );
+          })
+        );
+        watchlistWithHistory.push(...chunkResults);
+      }
 
       return watchlistWithHistory;
     },
     enabled: !!authHeader,
-    staleTime: 30000,
+    staleTime: 30000, // 30 seconds
+    gcTime: 5 * 60 * 1000, // 5 minutes
+    refetchOnWindowFocus: false,
+    refetchOnMount: false,
+    refetchOnReconnect: false
   });
 };
 
 const COLORS = ['#FF6384', '#36A2EB', '#FFCE56', '#4BC0C0', '#9966FF', '#FF9F40', '#C9CBCF', '#E57373', '#81C784', '#64B5F6'];
 
 const prepareTransactionsChartData = (transactions: Transaction[]) => {
-  const dailyData = transactions.reduce<Record<string, { income: number; expenses: number }>>((acc, t) => {
+  // Use Map for better performance with large datasets
+  const dailyData = new Map<string, { income: number; expenses: number }>();
+  
+  transactions.forEach(t => {
     const date = new Date(t.date).toLocaleDateString();
-    if (!acc[date]) acc[date] = { income: 0, expenses: 0 };
-    if (t.type === "income") acc[date].income += t.amount;
-    else acc[date].expenses += t.amount;
-    return acc;
-  }, {});
+    const current = dailyData.get(date) || { income: 0, expenses: 0 };
+    if (t.type === "income") {
+      current.income += t.amount;
+    } else {
+      current.expenses += t.amount;
+    }
+    dailyData.set(date, current);
+  });
 
-  const sortedDates = Object.keys(dailyData).sort((a, b) => 
+  const sortedDates = Array.from(dailyData.keys()).sort((a, b) => 
     new Date(a).getTime() - new Date(b).getTime()
   );
 
@@ -279,7 +317,7 @@ const prepareTransactionsChartData = (transactions: Transaction[]) => {
     datasets: [
       {
         label: "Income",
-        data: sortedDates.map((date) => dailyData[date].income),
+        data: sortedDates.map(date => dailyData.get(date)!.income),
         borderColor: "rgb(34, 197, 94)",
         backgroundColor: "rgba(34, 197, 94, 0.1)",
         tension: 0.4,
@@ -287,7 +325,7 @@ const prepareTransactionsChartData = (transactions: Transaction[]) => {
       },
       {
         label: "Expenses",
-        data: sortedDates.map((date) => dailyData[date].expenses),
+        data: sortedDates.map(date => dailyData.get(date)!.expenses),
         borderColor: "rgb(239, 68, 68)",
         backgroundColor: "rgba(239, 68, 68, 0.1)",
         tension: 0.4,
@@ -303,61 +341,87 @@ const getFilteredHistoricalData = (data: WatchlistStock['historicalData'] | unde
   const now = new Date();
   const cutoff = new Date(now);
   
+  // Use Map for better performance with large datasets
+  const filteredData = new Map<string, WatchlistStock['historicalData'][0]>();
+  
   switch (range) {
     case '1D': {
-      // For 1D, we should show data for the most recent day, whether intraday or not
       const hasIntradayData = data.some(item => item.is_intraday);
-      
-      // Get the most recent date in the data
       const sortedData = [...data].sort((a, b) => 
         new Date(b.date).getTime() - new Date(a.date).getTime()
       );
       const mostRecentDate = sortedData[0]?.date?.split(' ')[0] || '';
       
       if (hasIntradayData) {
-        // Return all intraday data points for today
-        return data.filter(item => item.is_intraday && item.date.includes(mostRecentDate));
+        data.forEach(item => {
+          if (item.is_intraday && item.date.includes(mostRecentDate)) {
+            filteredData.set(item.date, item);
+          }
+        });
       } else {
-        // If no intraday data, return the most recent day's data point (even if just one point)
-        return data.filter(item => item.date.includes(mostRecentDate)).slice(0, 1);
+        const mostRecent = data.find(item => item.date.includes(mostRecentDate));
+        if (mostRecent) {
+          filteredData.set(mostRecent.date, mostRecent);
+        }
       }
+      break;
+    }
+    case '7D': {
+      cutoff.setDate(now.getDate() - 7);
+      data.forEach(item => {
+        const itemDate = new Date(item.date);
+        if (itemDate >= cutoff && !item.is_intraday) {
+          filteredData.set(item.date, item);
+        }
+      });
+      break;
+    }
+    case '30D': {
+      cutoff.setDate(now.getDate() - 30);
+      data.forEach(item => {
+        const itemDate = new Date(item.date);
+        if (itemDate >= cutoff && !item.is_intraday) {
+          filteredData.set(item.date, item);
+        }
+      });
+      break;
+    }
+    case '1Y': {
+      cutoff.setFullYear(now.getFullYear() - 1);
+      data.forEach(item => {
+        const itemDate = new Date(item.date);
+        if (itemDate >= cutoff && !item.is_intraday) {
+          filteredData.set(item.date, item);
+        }
+      });
+      break;
     }
     case '5Y': {
-      // Exactly 5 years back for 5Y view
       cutoff.setFullYear(now.getFullYear() - 5);
-      
-      // For 5Y, we want daily or weekly data points, not intraday
-      const filteredData = data.filter(item => {
+      data.forEach(item => {
         const itemDate = new Date(item.date);
-        return itemDate >= cutoff && !item.is_intraday;
+        if (itemDate >= cutoff && !item.is_intraday) {
+          filteredData.set(item.date, item);
+        }
       });
       
-      // If we have too many points, sample them to avoid overloading the chart
-      if (filteredData.length > 260) { // ~260 trading days in a year
-        // Sample approximately weekly data points (every 5 trading days)
-        return filteredData.filter((_, index) => index % 5 === 0);
+      // Sample data if too many points
+      if (filteredData.size > 260) {
+        const sampledData = new Map<string, WatchlistStock['historicalData'][0]>();
+        let count = 0;
+        for (const [date, item] of filteredData) {
+          if (count % 5 === 0) {
+            sampledData.set(date, item);
+          }
+          count++;
+        }
+        return Array.from(sampledData.values());
       }
-      
-      return filteredData;
+      break;
     }
-    case '7D':
-      cutoff.setDate(now.getDate() - 7);
-      break;
-    case '30D':
-      cutoff.setDate(now.getDate() - 30);
-      break;
-    case '1Y':
-      cutoff.setFullYear(now.getFullYear() - 1);
-      break;
-    default:
-      cutoff.setHours(now.getHours() - 24);
   }
 
-  // For timeframes other than 1D and 5Y
-  return data.filter(item => {
-    const itemDate = new Date(item.date);
-    return itemDate >= cutoff && !item.is_intraday;
-  });
+  return Array.from(filteredData.values());
 };
 
 const prepareWatchlistChartData = (watchlist: WatchlistStock[] | undefined, selectedStocks: string[], range: TimeRange) => {
@@ -365,13 +429,23 @@ const prepareWatchlistChartData = (watchlist: WatchlistStock[] | undefined, sele
     return { labels: [], datasets: [] };
   }
 
-  // Get all unique dates from selected stocks
+  // Use Set for unique dates
   const allDates = new Set<string>();
+  const stockData = new Map<string, Map<string, number>>();
+
+  // Pre-process data for better performance
   selectedStocks.forEach(symbol => {
     const stock = watchlist.find(s => s.symbol === symbol);
     if (stock?.historicalData) {
-      getFilteredHistoricalData(stock.historicalData, range)
-        .forEach(item => allDates.add(item.date));
+      const filteredData = getFilteredHistoricalData(stock.historicalData, range);
+      const priceMap = new Map<string, number>();
+      
+      filteredData.forEach(item => {
+        allDates.add(item.date);
+        priceMap.set(item.date, item.price);
+      });
+      
+      stockData.set(symbol, priceMap);
     }
   });
 
@@ -380,18 +454,12 @@ const prepareWatchlistChartData = (watchlist: WatchlistStock[] | undefined, sele
     new Date(a).getTime() - new Date(b).getTime()
   );
 
-  // Create datasets for each selected stock
+  // Create datasets
   const datasets = selectedStocks.map((symbol, index) => {
-    const stock = watchlist.find(s => s.symbol === symbol);
-    if (!stock?.historicalData) return null;
+    const priceMap = stockData.get(symbol);
+    if (!priceMap) return null;
 
-    const filteredData = getFilteredHistoricalData(stock.historicalData, range);
     const color = COLORS[index % COLORS.length];
-    
-    const priceMap = new Map(
-      filteredData.map(item => [item.date, item.price])
-    );
-
     const data = sortedDates.map(date => priceMap.get(date) ?? null);
 
     return {
@@ -418,14 +486,25 @@ const prepareWatchlistChartData = (watchlist: WatchlistStock[] | undefined, sele
 const getChartOptions = (chartRef: any): ChartOptions<"line"> => ({
   responsive: true,
   maintainAspectRatio: false,
+  animation: {
+    duration: 0 // Disable animations for better performance
+  },
   plugins: {
     legend: { 
       display: true, 
-      position: "top" as const 
+      position: "top" as const,
+      labels: {
+        boxWidth: 12,
+        usePointStyle: true,
+        pointStyle: 'circle'
+      }
     },
     tooltip: { 
       mode: "index" as const, 
-      intersect: false 
+      intersect: false,
+      animation: {
+        duration: 0
+      }
     },
     zoom: {
       pan: {
@@ -457,26 +536,50 @@ const getChartOptions = (chartRef: any): ChartOptions<"line"> => ({
   },
   elements: {
     point: {
-      radius: 0, // Hide points by default
-      hitRadius: 8, // Keep hit radius for hover detection
-      hoverRadius: 5, // Show points on hover
+      radius: 0,
+      hitRadius: 8,
+      hoverRadius: 5,
+    },
+    line: {
+      borderWidth: 2,
+      tension: 0.4
     }
   },
   scales: {
     y: { 
       beginAtZero: true, 
-      grid: { color: "rgba(0, 0, 0, 0.1)" } 
+      grid: { 
+        color: "rgba(0, 0, 0, 0.1)"
+      },
+      ticks: {
+        maxTicksLimit: 8,
+        callback: (value: any) => `$${value.toFixed(2)}`
+      }
     },
     x: { 
-      grid: { display: false }, 
-      ticks: { maxTicksLimit: 10 } 
+      grid: { 
+        display: false
+      }, 
+      ticks: { 
+        maxTicksLimit: 10,
+        autoSkip: true,
+        maxRotation: 0
+      } 
     },
   },
+  interaction: {
+    mode: 'nearest',
+    axis: 'x',
+    intersect: false
+  }
 });
 
 const getWatchlistChartOptions = (range: TimeRange, chartRef: any): ChartOptions<"line"> => ({
   responsive: true,
   maintainAspectRatio: false,
+  animation: {
+    duration: 0 // Disable animations for better performance
+  },
   plugins: {
     legend: { 
       display: true, 
@@ -484,12 +587,16 @@ const getWatchlistChartOptions = (range: TimeRange, chartRef: any): ChartOptions
       labels: {
         color: 'rgb(156, 163, 175)',
         usePointStyle: true,
-        pointStyle: 'circle'
+        pointStyle: 'circle',
+        boxWidth: 12
       }
     },
     tooltip: {
       mode: "index" as const,
       intersect: false,
+      animation: {
+        duration: 0
+      },
       backgroundColor: 'rgba(17, 24, 39, 0.8)',
       titleColor: 'rgb(229, 231, 235)',
       bodyColor: 'rgb(229, 231, 235)',
@@ -498,15 +605,9 @@ const getWatchlistChartOptions = (range: TimeRange, chartRef: any): ChartOptions
       callbacks: {
         label: (context: any) => `${context.dataset.label}: $${context.parsed.y.toFixed(2)}`,
         title: (context: any) => {
-          if (!context || !context[0] || context[0].dataIndex === undefined) {
-            return '';
-          }
+          if (!context?.[0]?.dataIndex === undefined) return '';
           
-          const index = context[0].dataIndex;
-          const labels = context[0].chart?.data?.labels;
-          if (!labels || !labels[index]) return '';
-          
-          const date = new Date(labels[index]);
+          const date = new Date(context[0].chart.data.labels[context[0].dataIndex]);
           return date.toLocaleDateString([], { 
             weekday: 'long',
             year: 'numeric',
@@ -534,6 +635,17 @@ const getWatchlistChartOptions = (range: TimeRange, chartRef: any): ChartOptions
       }
     }
   },
+  elements: {
+    point: {
+      radius: range === '1D' ? 0 : 2,
+      hitRadius: 8,
+      hoverRadius: 4,
+    },
+    line: {
+      borderWidth: 2,
+      tension: 0.4
+    }
+  },
   scales: {
     x: { 
       grid: { 
@@ -543,11 +655,10 @@ const getWatchlistChartOptions = (range: TimeRange, chartRef: any): ChartOptions
       ticks: {
         color: 'rgb(156, 163, 175)',
         maxTicksLimit: range === '1D' ? 12 : range === '7D' ? 7 : range === '30D' ? 15 : 20,
+        autoSkip: true,
+        maxRotation: 0,
         callback: function(this: any, value, index) {
-          // Safe access to labels
-          if (!this.chart || !this.chart.data || !this.chart.data.labels || !this.chart.data.labels[index]) {
-            return '';
-          }
+          if (!this.chart?.data?.labels?.[index]) return '';
           
           const date = new Date(this.chart.data.labels[index] as string);
           if (range === '1D') {
@@ -570,9 +681,15 @@ const getWatchlistChartOptions = (range: TimeRange, chartRef: any): ChartOptions
       },
       ticks: { 
         color: 'rgb(156, 163, 175)',
+        maxTicksLimit: 8,
         callback: (value: any) => `$${value.toFixed(2)}`
       }
     }
+  },
+  interaction: {
+    mode: 'nearest',
+    axis: 'x',
+    intersect: false
   }
 });
 
@@ -614,7 +731,7 @@ const DashboardSection = ({ sectionId, transactions, insights, watchlist, select
                   key={`transactions-chart-${transactions?.length || 0}-${isChartsVisible}`}
                   data={transactionsChartData} 
                   options={transactionsChartOptions} 
-                  ref={(ref) => setTransactionsChartRef(ref)}
+                  ref={transactionsChartRef}
                 />
               </Suspense>
             )}
@@ -792,7 +909,7 @@ const DashboardSection = ({ sectionId, transactions, insights, watchlist, select
                       key={`watchlist-chart-${timeRange}-${selectedStocks.join('-')}-${isChartsVisible}`}
                       data={watchlistChartData}
                       options={watchlistChartOptions}
-                      ref={(ref) => setWatchlistChartRef(ref)}
+                      ref={watchlistChartRef}
                     />
                   </Suspense>
                 )}
@@ -1041,70 +1158,55 @@ export default function Dashboard() {
     setWatchlistChartRef(ref);
   }, []);
 
-  // Update chart cleanup effect
-  useEffect(() => {
-    const cleanup = () => {
-      if (chartInstancesRef.current['watchlist']) {
-        try {
-          chartInstancesRef.current['watchlist'].destroy();
-          delete chartInstancesRef.current['watchlist'];
-        } catch (error) {
-          console.warn('Error destroying watchlist chart:', error);
-        }
-      }
-      if (chartInstancesRef.current['transactions']) {
-        try {
-          chartInstancesRef.current['transactions'].destroy();
-          delete chartInstancesRef.current['transactions'];
-        } catch (error) {
-          console.warn('Error destroying transactions chart:', error);
-        }
-      }
-    };
-
-    // Clean up on unmount
-    return () => {
-      cleanup();
-    };
-  }, []);
-
-  // Separate effect for data changes
-  useEffect(() => {
-    const cleanup = () => {
-      if (chartInstancesRef.current['watchlist']) {
-        try {
-          chartInstancesRef.current['watchlist'].destroy();
-          delete chartInstancesRef.current['watchlist'];
-        } catch (error) {
-          console.warn('Error destroying watchlist chart:', error);
-        }
-      }
-      if (chartInstancesRef.current['transactions']) {
-        try {
-          chartInstancesRef.current['transactions'].destroy();
-          delete chartInstancesRef.current['transactions'];
-        } catch (error) {
-          console.warn('Error destroying transactions chart:', error);
-        }
-      }
-    };
-
-    cleanup();
-  }, [timeRange, selectedStocks]);
-
-  // Chart data preparation
+  // Chart data preparation with better memoization
   const transactionsChartData = useMemo(() => {
     if (!transactions || !isChartDataLoaded) return { labels: [], datasets: [] };
     return prepareTransactionsChartData(transactions);
   }, [transactions, isChartDataLoaded]);
 
   const watchlistChartData = useMemo(() => {
-    if (!watchlist || !isChartDataLoaded) return { labels: [], datasets: [] };
+    if (!watchlist || !isChartDataLoaded || selectedStocks.length === 0) return { labels: [], datasets: [] };
     return prepareWatchlistChartData(watchlist, selectedStocks, timeRange);
   }, [watchlist, selectedStocks, timeRange, isChartDataLoaded]);
 
-  const transactionsChartOptions = useMemo(() => getChartOptions(transactionsChartRef), [transactionsChartRef]);
-  const watchlistChartOptions = useMemo(() => getWatchlistChartOptions(timeRange, watchlistChartRef), [timeRange, watchlistChartRef]);
+  // Memoize chart options to prevent unnecessary re-renders
+  const transactionsChartOptions = useMemo(() => 
+    getChartOptions(transactionsChartRef), 
+    [transactionsChartRef]
+  );
+
+  const watchlistChartOptions = useMemo(() => 
+    getWatchlistChartOptions(timeRange, watchlistChartRef), 
+    [timeRange, watchlistChartRef]
+  );
+
+  // Optimize chart cleanup
+  useEffect(() => {
+    return () => {
+      Object.values(chartInstancesRef.current).forEach(chart => {
+        try {
+          chart.destroy();
+        } catch (error) {
+          console.warn('Error destroying chart:', error);
+        }
+      });
+      chartInstancesRef.current = {};
+    };
+  }, []);
+
+  // Optimize data loading effect
+  useEffect(() => {
+    if (!isTransactionsLoading && !transactionsError && 
+        !isInsightsLoading && !insightsError && 
+        !isWatchlistLoading && !watchlistError) {
+      setIsChartDataLoaded(true);
+      
+      // Use requestAnimationFrame for smoother chart rendering
+      requestAnimationFrame(() => {
+        setIsChartsVisible(true);
+      });
+    }
+  }, [isTransactionsLoading, transactionsError, isInsightsLoading, insightsError, isWatchlistLoading, watchlistError]);
 
   // HTML5 Drag and Drop functions
   const handleDragStart = (index: number) => {
@@ -1153,20 +1255,6 @@ export default function Dashboard() {
       setSelectedStocks(watchlist.map(stock => stock.symbol));
     }
   }, [watchlist]);
-
-  // First load data, then initialize charts with delay
-  useEffect(() => {
-    if (!isTransactionsLoading && !transactionsError && !isInsightsLoading && !insightsError && !isWatchlistLoading && !watchlistError) {
-      // First load chart data
-      setIsChartDataLoaded(true);
-      
-      // Then show charts after a delay
-      const timer = setTimeout(() => {
-        setIsChartsVisible(true);
-      }, 1000);
-      return () => clearTimeout(timer);
-    }
-  }, [isTransactionsLoading, transactionsError, isInsightsLoading, insightsError, isWatchlistLoading, watchlistError]);
 
   const isLoading = isTransactionsLoading || isInsightsLoading || isWatchlistLoading;
   const error = transactionsError || insightsError || watchlistError;

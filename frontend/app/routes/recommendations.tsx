@@ -143,104 +143,50 @@ const useRecommendations = (authHeader: AuthHeader) => {
     queryFn: async () => {
       if (!authHeader) return [];
       
-      // Add some retry logic for recommendations
-      let attempts = 0;
-      const maxAttempts = 3;
-      
-      while (attempts < maxAttempts) {
-        try {
-          const response = await fetch("/api/stocks/recommendations", {
-            headers: {
-              ...authHeader,
-              "Content-Type": "application/json"
-            }
-          });
-          
-          if (!response.ok) {
-            throw new Error(`Failed to fetch recommendations: ${response.status}`);
+      try {
+        const response = await fetch("/api/stocks/recommendations", {
+          headers: {
+            ...authHeader,
+            "Content-Type": "application/json"
           }
-          
-          const data = await response.json() as StockResponse[];
-          
-          // Ensure we got valid data
-          if (!Array.isArray(data)) {
-            throw new Error('Invalid recommendations data format');
-          }
-          
-          // Log how many recommendations we got
-          console.log(`Fetched ${data.length} recommendations`);
-          
-          // Default to some popular stocks if no recommendations available
-          if (data.length === 0 && attempts === maxAttempts - 1) {
-            console.log('No recommendations available, using default stocks');
-            const defaultResponse = await fetch("/api/stocks/AAPL", {
-              headers: {
-                ...authHeader,
-                "Content-Type": "application/json"
-              }
-            });
-            
-            if (defaultResponse.ok) {
-              const stockData = await defaultResponse.json() as StockResponse;
-              stockData.recommendation = "BUY";
-              stockData.recommendation_reason = "Popular technology stock with strong performance";
-              
-              // Transform to the correct format
-              return [{
-                symbol: stockData.symbol,
-                name: stockData.name,
-                currentPrice: stockData.current_price || 0,
-                change: stockData.change || 0,
-                changePercent: stockData.change_percent || 0,
-                volume: stockData.volume || 0,
-                marketCap: stockData.market_cap || 0,
-                historicalData: stockData.historical_data?.map(point => ({
-                  date: point.date,
-                  price: point.price,
-                  is_intraday: point.date.includes(' ')
-                })) || [],
-                recommendation: stockData.recommendation || 'BUY',
-                recommendationReason: stockData.recommendation_reason || 'Strong market performance'
-              }] as Stock[];
-            }
-          }
-          
-          return data.map((stock: StockResponse) => ({
-            symbol: stock.symbol,
-            name: stock.name,
-            currentPrice: stock.current_price || 0,
-            change: stock.change || 0,
-            changePercent: stock.change_percent || 0,
-            volume: stock.volume || 0,
-            marketCap: stock.market_cap || 0,
-            historicalData: stock.historical_data?.map(point => ({
-              date: point.date,
-              price: point.price,
-              is_intraday: point.date.includes(' ')
-            })) || [],
-            recommendation: stock.recommendation || 'BUY',
-            recommendationReason: stock.recommendation_reason || 'Strong market performance'
-          })) as Stock[];
-          
-        } catch (error) {
-          console.error(`Attempt ${attempts + 1} failed:`, error);
-          attempts++;
-          
-          // On the last attempt, throw the error
-          if (attempts === maxAttempts) {
-            throw error;
-          }
-          
-          // Wait a bit before retrying
-          await new Promise(resolve => setTimeout(resolve, 1000));
+        });
+        
+        if (!response.ok) {
+          throw new Error(`Failed to fetch recommendations: ${response.status}`);
         }
+        
+        const data = await response.json() as StockResponse[];
+        
+        // Ensure we got valid data
+        if (!Array.isArray(data)) {
+          throw new Error('Invalid recommendations data format');
+        }
+        
+        // Transform the data
+        return data.map((stock: StockResponse) => ({
+          symbol: stock.symbol,
+          name: stock.name,
+          currentPrice: stock.current_price || 0,
+          change: stock.change || 0,
+          changePercent: stock.change_percent || 0,
+          volume: stock.volume || 0,
+          marketCap: stock.market_cap || 0,
+          historicalData: stock.historical_data?.map(point => ({
+            date: point.date,
+            price: point.price,
+            is_intraday: point.date.includes(' ')
+          })) || [],
+          recommendation: stock.recommendation || 'BUY',
+          recommendationReason: stock.recommendation_reason || 'Strong market performance'
+        })) as Stock[];
+      } catch (error) {
+        console.error('Error fetching recommendations:', error);
+        throw error;
       }
-      
-      return []; // Shouldn't reach here due to throw in the loop
     },
     enabled: !!authHeader,
     staleTime: 30000, // Consider data fresh for 30 seconds
-    retry: 2, // React Query's built-in retry mechanism as backup
+    retry: 2, // React Query's built-in retry mechanism
   });
 };
 
@@ -323,71 +269,67 @@ const getFilteredHistoricalData = (data: Stock['historicalData'] | undefined, ra
   
   switch (range) {
     case '1D': {
-      // For 1D, we need minute-level granularity for the past 24 hours
+      // For 1D, we need data from the last 24 hours
       cutoff.setHours(cutoff.getHours() - 24);
       
-      // First try to get intraday data for the last 24 hours
-      let filteredData = data
-        .filter(item => item.is_intraday && new Date(item.date) >= cutoff)
+      // Get all intraday data points from the last 24 hours
+      const filteredData = data
+        .filter(item => {
+          const itemDate = new Date(item.date);
+          return itemDate >= cutoff && item.is_intraday; // Ensure we use intraday data for 1D view
+        })
         .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
-      
-      // If no intraday data in the last 24 hours, get the most recent intraday data
-      // regardless of the cutoff time to show something
-      if (filteredData.length === 0) {
-        const intradayData = data.filter(item => item.is_intraday);
-        if (intradayData.length > 0) {
-          // Get the most recent day's worth of intraday data
-          const latestDate = new Date(Math.max(...intradayData.map(item => new Date(item.date).getTime())));
-          const oneDayBack = new Date(latestDate);
-          oneDayBack.setHours(oneDayBack.getHours() - 24);
-          
-          filteredData = intradayData
-            .filter(item => new Date(item.date) >= oneDayBack)
-            .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
-        }
-      }
-      
-      // If we still don't have data, fall back to the most recent data points
-      if (filteredData.length === 0) {
-        // Get the most recent 24 data points, whatever they are
-        filteredData = [...data]
-          .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
-          .slice(0, 24)
+
+      // If we have too few intraday points, try to include any data points from the last 24 hours
+      if (filteredData.length < 10) {
+        return data
+          .filter(item => {
+            const itemDate = new Date(item.date);
+            return itemDate >= cutoff;
+          })
           .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
       }
       
-      // If we have a very large number of points, sample them to prevent overcrowding
-      if (filteredData.length > 200) {
-        const sampleRate = Math.max(1, Math.floor(filteredData.length / 100));
-        return filteredData.filter((_, index) => index % sampleRate === 0);
+      // If we have a reasonable number of points, return them all for minute-by-minute view
+      if (filteredData.length <= 390) { // 6.5 trading hours * 60 minutes
+        return filteredData;
       }
       
-      return filteredData;
+      // If we have too many points, sample them to prevent overcrowding
+      const sampleRate = Math.ceil(filteredData.length / 390);
+      return filteredData.filter((_, index) => index % sampleRate === 0);
     }
     case '7D': {
-      // For 7D, we need hourly data for the past 7 days
+      // For 7D, we need data from the last 7 days
       cutoff.setDate(cutoff.getDate() - 7);
       
       // Get all data points from the last 7 days
-      const allData = data
-        .filter(item => new Date(item.date) >= cutoff)
+      const filteredData = data
+        .filter(item => {
+          const itemDate = new Date(item.date);
+          return itemDate >= cutoff;
+        })
         .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+
+      // Group data by hour to ensure hourly granularity
+      const hourlyData = new Map();
+      filteredData.forEach(item => {
+        const date = new Date(item.date);
+        const hourKey = `${date.getFullYear()}-${date.getMonth() + 1}-${date.getDate()}-${date.getHours()}`;
         
-      // If we have sufficient data, use it directly
-      if (allData.length >= 7) {
-        // If we have a lot of data points, sample to get hourly data
-        if (allData.length > 168) { // 24 hours * 7 days
-          const sampleRate = Math.max(1, Math.floor(allData.length / 168));
-          return allData.filter((_, index) => index % sampleRate === 0);
+        // If we already have a data point for this hour, use the most recent one
+        if (!hourlyData.has(hourKey) || 
+            new Date(item.date).getTime() > new Date(hourlyData.get(hourKey).date).getTime()) {
+          hourlyData.set(hourKey, item);
         }
-        return allData;
-      }
+      });
       
-      // If we don't have enough data in the 7-day window, get the most recent 7 days of data
-      // regardless of the cutoff time
-      const sortedData = [...data].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-      const recentData = sortedData.slice(0, Math.min(168, sortedData.length));
-      return recentData.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+      // Convert hourly data back to array and sort by date
+      const hourlyArray = Array.from(hourlyData.values())
+        .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+      
+      // For 7D view (168 hours), we should have ~168 data points
+      return hourlyArray;
     }
     case '30D': {
       // For 30D view, use daily data
@@ -395,7 +337,10 @@ const getFilteredHistoricalData = (data: Stock['historicalData'] | undefined, ra
       
       // Get daily data for the last 30 days
       const dailyData = data
-        .filter(item => new Date(item.date) >= cutoff)
+        .filter(item => {
+          const itemDate = new Date(item.date);
+          return itemDate >= cutoff;
+        })
         .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
         
       // If we have intraday data mixed in, use one data point per day
@@ -420,9 +365,12 @@ const getFilteredHistoricalData = (data: Stock['historicalData'] | undefined, ra
       // For 1Y view, use daily data
       cutoff.setFullYear(cutoff.getFullYear() - 1);
       
-      // Prioritize non-intraday data, but use what we have
+      // Get data from the last year
       const filteredData = data
-        .filter(item => new Date(item.date) >= cutoff)
+        .filter(item => {
+          const itemDate = new Date(item.date);
+          return itemDate >= cutoff;
+        })
         .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
       
       // Group by day to get one data point per day
@@ -444,9 +392,12 @@ const getFilteredHistoricalData = (data: Stock['historicalData'] | undefined, ra
       // Exactly 5 years back for 5Y view
       cutoff.setFullYear(now.getFullYear() - 5);
       
-      // Prioritize non-intraday data, but use what we have
+      // Get data from the last 5 years
       const filteredData = data
-        .filter(item => new Date(item.date) >= cutoff)
+        .filter(item => {
+          const itemDate = new Date(item.date);
+          return itemDate >= cutoff;
+        })
         .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
       
       // Group by day to get one data point per day
@@ -473,10 +424,7 @@ const getFilteredHistoricalData = (data: Stock['historicalData'] | undefined, ra
       return dailyData;
     }
     default:
-      cutoff.setHours(now.getHours() - 24);
-      return data
-        .filter(item => new Date(item.date) >= cutoff)
-        .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+      return data;
   }
 };
 
@@ -630,8 +578,10 @@ const StockChart = ({
   const formatDateLabel = useCallback((dateStr: string) => {
     const date = new Date(dateStr);
     if (timeRange === '1D') {
+      // For 1D, show hours and minutes (e.g., 10:30)
       return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
     } else if (timeRange === '7D') {
+      // For 7D, show day and hour (e.g., Mon 14:00)
       return `${date.toLocaleDateString([], { weekday: 'short' })} ${date.getHours()}:00`;
     } else if (timeRange === '30D') {
       return date.toLocaleDateString([], { month: 'short', day: 'numeric' });
@@ -664,11 +614,14 @@ const StockChart = ({
     const formattedDateLabels = sortedDates.map(formatDateLabel);
 
     // Create datasets for each selected stock
-    const datasets = selectedStocks.map((symbol, index) => {
+    const datasets = selectedStocks.map((symbol) => {
       const stock = watchlist.find(s => s.symbol === symbol);
       if (!stock?.historicalData) return null;
 
-      const color = COLORS[index % COLORS.length];
+      // Find the index in the original watchlist to keep color consistent
+      const originalIndex = watchlist.findIndex(s => s.symbol === symbol);
+      const color = COLORS[originalIndex % COLORS.length];
+      
       const filteredData = getFilteredHistoricalData(stock.historicalData, timeRange);
       const priceMap = new Map(
         filteredData.map(item => [item.date, item.price])
@@ -732,9 +685,9 @@ const StockChart = ({
           spanGaps: false,
         },
         point: {
-          radius: 0, // Hide points by default
-          hitRadius: 8, // Keep hit radius for hover detection
-          hoverRadius: 5, // Show points on hover
+          radius: timeRange === '1D' ? 2 : 0, // Show points for 1D view
+          hitRadius: 8,
+          hoverRadius: 5,
         }
       },
       plugins: {
@@ -848,10 +801,29 @@ const StockChart = ({
           },
           ticks: {
             autoSkip: true,
-            maxTicksLimit: timeRange === '1D' ? 6 : timeRange === '7D' ? 7 : timeRange === '30D' ? 10 : 12,
+            maxTicksLimit: timeRange === '1D' ? 6 : timeRange === '7D' ? 14 : timeRange === '30D' ? 10 : 12,
             font: { size: 10 },
             color: textColor,
             padding: 5,
+            callback: function(this: any, value: any, index: number): string {
+              if (!this.chart?.data?.labels?.[index]) return '';
+              const date = new Date(this.chart.data.labels[index] as string);
+              
+              if (timeRange === '1D') {
+                // For 1D, show time in HH:MM format
+                return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+              } else if (timeRange === '7D') {
+                // For 7D, show weekday + hour
+                const hour = date.getHours();
+                const weekday = date.toLocaleDateString([], { weekday: 'short' });
+                return hour % 3 === 0 ? `${weekday} ${hour}:00` : `${hour}:00`;
+              } else if (timeRange === '30D') {
+                return date.toLocaleDateString([], { month: 'short', day: 'numeric' });
+              } else if (timeRange === '5Y') {
+                return date.toLocaleDateString([], { year: 'numeric', month: 'short' });
+              }
+              return date.toLocaleDateString([], { month: 'short', year: '2-digit' });
+            }
           }
         },
         y: {
@@ -911,7 +883,7 @@ const StockChart = ({
     <div className="h-[500px]">
       <div className="flex justify-between items-center mb-4">
         <div className="text-xs text-gray-500 dark:text-gray-400">
-          {timeRange === '1D' ? 'Last 24 hours' : 
+          {timeRange === '1D' ? 'Minute-by-minute data, last 24 hours' : 
            timeRange === '7D' ? 'Hourly data, last 7 days' : 
            timeRange === '30D' ? 'Daily data, last 30 days' : 
            timeRange === '1Y' ? 'Daily data, last year' : 'Weekly data, last 5 years'}

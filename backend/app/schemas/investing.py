@@ -54,6 +54,22 @@ class StockDetail(BaseModel):
             datetime: lambda v: v.isoformat()
         }
 
+class NewsItem(BaseModel):
+    title: str
+    publisher: str
+    link: str
+    published_date: datetime
+    summary: Optional[str] = None
+    thumbnail: Optional[str] = None
+    related_symbols: List[str] = Field(default_factory=list)
+    source: str = "Yahoo Finance"
+
+    class Config:
+        from_attributes = True
+        json_encoders = {
+            datetime: lambda v: v.isoformat()
+        }
+
 class HoldingBase(BaseModel):
     stock_id: int
     shares: float
