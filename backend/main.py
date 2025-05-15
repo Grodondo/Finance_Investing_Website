@@ -9,7 +9,7 @@ from app.db.database import engine, Base
 
 # Configure logging
 logging.basicConfig(
-    level=logging.DEBUG,
+    level=logging.WARNING,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     handlers=[
         logging.StreamHandler()  # This will print to console

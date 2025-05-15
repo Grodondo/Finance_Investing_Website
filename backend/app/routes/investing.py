@@ -258,7 +258,11 @@ async def get_stock_data(symbol: str, db: Session) -> StockDetail:
                 logger.info(f"Created new stock record for {symbol}")
             
             db.commit()
+            db.refresh(db_stock)  # Refresh to get the ID if it's a new record
             logger.info(f"Database updated successfully for {symbol}")
+            
+            # Add the ID to the stock_data dictionary
+            stock_data['id'] = db_stock.id
         except Exception as e:
             db.rollback()
             logger.error(f"Error updating database for {symbol}: {str(e)}")
