@@ -47,6 +47,8 @@ class StockDetail(BaseModel):
     fifty_two_week_low: Optional[float] = None
     historical_data: List[HistoricalDataPoint] = Field(default_factory=list)
     last_updated: datetime
+    recommendation: Optional[str] = None
+    recommendation_reason: Optional[str] = None
 
     class Config:
         from_attributes = True
