@@ -46,6 +46,8 @@ const useMarketNews = (authHeader: AuthHeader) => {
     enabled: !!authHeader,
     staleTime: 5 * 60 * 1000, // 5 minutes
     gcTime: 30 * 60 * 1000, // 30 minutes
+    retry: 1,
+    refetchOnWindowFocus: false,
   });
 };
 
@@ -67,6 +69,8 @@ const useWatchlistNews = (authHeader: AuthHeader) => {
     enabled: !!authHeader,
     staleTime: 5 * 60 * 1000, // 5 minutes
     gcTime: 30 * 60 * 1000, // 30 minutes
+    retry: 1,
+    refetchOnWindowFocus: false,
   });
 };
 
@@ -256,7 +260,10 @@ export default function News() {
   // Get auth header for API requests
   const authHeader = useMemo(() => getAuthHeader() as AuthHeader, [getAuthHeader]);
   
-  // Fetch news data
+  // State to track if initial page render is complete
+  const [isPageLoaded, setIsPageLoaded] = useState(false);
+  
+  // Fetch news data with defer loading
   const { 
     data: marketNews,
     isLoading: isMarketNewsLoading,
@@ -279,6 +286,16 @@ export default function News() {
     isMounted.current = true;
   }, [isAuthenticated, navigate]);
   
+  // Mark page as loaded after initial render
+  useEffect(() => {
+    // Use requestAnimationFrame to wait for the next frame after rendering
+    const timeoutId = setTimeout(() => {
+      setIsPageLoaded(true);
+    }, 100);
+    
+    return () => clearTimeout(timeoutId);
+  }, []);
+  
   // Handle tab selection
   const [activeTab, setActiveTab] = useState<'all' | 'watchlist'>('all');
   
@@ -297,6 +314,30 @@ export default function News() {
   useEffect(() => {
     setIsClient(true);
   }, []);
+  
+  // Render a skeleton loader for news items
+  const NewsCardSkeleton = () => (
+    <div className="bg-white dark:bg-gray-800 rounded-lg overflow-hidden shadow-sm border border-gray-200 dark:border-gray-700 p-5">
+      <div className="flex items-start gap-4">
+        <div className="flex-shrink-0 w-20 h-20 bg-gray-200 dark:bg-gray-700 rounded-md animate-pulse"></div>
+        <div className="flex-1 min-w-0">
+          <div className="h-3 bg-gray-200 dark:bg-gray-700 rounded mb-2 animate-pulse"></div>
+          <div className="h-5 bg-gray-200 dark:bg-gray-700 rounded mb-2 animate-pulse"></div>
+          <div className="h-5 bg-gray-200 dark:bg-gray-700 rounded mb-2 animate-pulse w-3/4"></div>
+          <div className="h-4 bg-gray-200 dark:bg-gray-700 rounded animate-pulse w-1/4 mt-4"></div>
+        </div>
+      </div>
+    </div>
+  );
+  
+  // Render multiple skeleton loaders
+  const NewsSkeletonList = ({ count = 5 }: { count?: number }) => (
+    <div className="grid grid-cols-1 gap-6">
+      {Array.from({ length: count }).map((_, index) => (
+        <NewsCardSkeleton key={index} />
+      ))}
+    </div>
+  );
   
   return (
     <div className="min-h-screen pt-16 bg-gray-50 dark:bg-gray-900">
@@ -374,7 +415,7 @@ export default function News() {
         ) : (
           <>
             {/* Watchlist News Section - Only render if client-side */}
-            {isClient && activeTab === 'all' && watchlistNews && watchlistNews.length > 0 && (
+            {isClient && activeTab === 'all' && (
               <div className="mb-12">
                 <div className="flex items-center mb-4">
                   <BookmarkIcon className="h-5 w-5 text-indigo-600 dark:text-indigo-400 mr-2" />
@@ -382,12 +423,9 @@ export default function News() {
                 </div>
                 
                 <div className="grid grid-cols-1 gap-6">
-                  {isWatchlistNewsLoading ? (
-                    <div className="text-center py-8">
-                      <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600 dark:border-indigo-400 mx-auto"></div>
-                      <p className="mt-4 text-gray-500 dark:text-gray-400">Loading watchlist news...</p>
-                    </div>
-                  ) : watchlistNews.length > 0 ? (
+                  {!isPageLoaded || isWatchlistNewsLoading ? (
+                    <NewsSkeletonList count={3} />
+                  ) : watchlistNews && watchlistNews.length > 0 ? (
                     watchlistNews.slice(0, 5).map((news, index) => (
                       <NewsCard key={`${news.title}-${index}`} news={news} isWatchlist={true} />
                     ))
@@ -395,7 +433,7 @@ export default function News() {
                     <EmptyNewsState type="watchlist" />
                   )}
                   
-                  {watchlistNews.length > 5 && (
+                  {watchlistNews && watchlistNews.length > 5 && (
                     <div className="text-center mt-4">
                       <button
                         onClick={() => setActiveTab('watchlist')}
@@ -427,11 +465,8 @@ export default function News() {
               
               <div className="grid grid-cols-1 gap-6">
                 {activeTab === 'all' ? (
-                  isMarketNewsLoading ? (
-                    <div className="text-center py-8">
-                      <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600 dark:border-indigo-400 mx-auto"></div>
-                      <p className="mt-4 text-gray-500 dark:text-gray-400">Loading market news...</p>
-                    </div>
+                  !isPageLoaded || isMarketNewsLoading ? (
+                    <NewsSkeletonList count={5} />
                   ) : marketNews && marketNews.length > 0 ? (
                     marketNews.map((news, index) => (
                       <NewsCard key={`${news.title}-${index}`} news={news} />
@@ -440,11 +475,8 @@ export default function News() {
                     <EmptyNewsState type="market" />
                   )
                 ) : (
-                  isWatchlistNewsLoading ? (
-                    <div className="text-center py-8">
-                      <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600 dark:border-indigo-400 mx-auto"></div>
-                      <p className="mt-4 text-gray-500 dark:text-gray-400">Loading watchlist news...</p>
-                    </div>
+                  !isPageLoaded || isWatchlistNewsLoading ? (
+                    <NewsSkeletonList count={5} />
                   ) : watchlistNews && watchlistNews.length > 0 ? (
                     watchlistNews.map((news, index) => (
                       <NewsCard key={`${news.title}-${index}`} news={news} isWatchlist={true} />

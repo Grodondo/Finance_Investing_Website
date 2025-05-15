@@ -148,8 +148,10 @@ const useStockData = (symbol: string | null, authHeader: AuthHeader) => {
       } as Stock;
     },
     enabled: !!symbol && !!authHeader,
-    staleTime: 30000, // Consider data fresh for 30 seconds
-    gcTime: 5 * 60 * 1000, // Keep in cache for 5 minutes (replaced cacheTime with gcTime)
+    staleTime: 5 * 60 * 1000, // Consider data fresh for 5 minutes
+    gcTime: 10 * 60 * 1000, // Keep in cache for 10 minutes
+    retry: 1,
+    refetchOnWindowFocus: false,
   });
 };
 
@@ -204,7 +206,7 @@ const useWatchlistWithHistory = (authHeader: AuthHeader) => {
                 changePercent: stockData.change_percent || stock.changePercent,
                 volume: stockData.volume || stock.volume,
                 marketCap: stockData.market_cap || stock.marketCap,
-                historicalData: stockData.historical_data?.map((point: { date: string; price: number }) => ({
+                historicalData: stockData.historical_data?.map(point => ({
                   date: point.date,
                   price: point.price,
                   is_intraday: point.date.includes(' ')
@@ -217,11 +219,14 @@ const useWatchlistWithHistory = (authHeader: AuthHeader) => {
           }
         })
       );
-
+      
       return watchlistWithHistory;
     },
     enabled: !!authHeader,
-    staleTime: 30000,
+    staleTime: 5 * 60 * 1000, // 5 minutes
+    gcTime: 10 * 60 * 1000, // 10 minutes
+    retry: 1,
+    refetchOnWindowFocus: false,
   });
 };
 
@@ -240,7 +245,10 @@ const usePortfolio = (authHeader: AuthHeader) => {
       return response.json() as Promise<Portfolio>;
     },
     enabled: !!authHeader,
-    staleTime: 30000,
+    staleTime: 5 * 60 * 1000, // 5 minutes
+    gcTime: 10 * 60 * 1000, // 10 minutes
+    retry: 1,
+    refetchOnWindowFocus: false,
   });
 };
 
@@ -348,6 +356,71 @@ const prepareChartData = (data: Stock['historicalData'] | undefined, range: Time
   };
 };
 
+// Add skeleton loaders for different components
+const StockChartSkeleton = () => (
+  <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-4 animate-pulse">
+    <div className="h-8 w-48 bg-gray-200 dark:bg-gray-700 rounded mb-4"></div>
+    <div className="h-64 bg-gray-200 dark:bg-gray-700 rounded"></div>
+    <div className="flex justify-center mt-4 space-x-2">
+      {['1D', '7D', '30D', '1Y'].map((range) => (
+        <div key={range} className="h-8 w-12 bg-gray-200 dark:bg-gray-700 rounded"></div>
+      ))}
+    </div>
+  </div>
+);
+
+const StockInfoSkeleton = () => (
+  <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-4 animate-pulse">
+    <div className="h-8 w-64 bg-gray-200 dark:bg-gray-700 rounded mb-4"></div>
+    <div className="grid grid-cols-2 gap-4">
+      <div className="h-6 w-32 bg-gray-200 dark:bg-gray-700 rounded"></div>
+      <div className="h-6 w-32 bg-gray-200 dark:bg-gray-700 rounded"></div>
+      <div className="h-6 w-32 bg-gray-200 dark:bg-gray-700 rounded"></div>
+      <div className="h-6 w-32 bg-gray-200 dark:bg-gray-700 rounded"></div>
+      <div className="h-6 w-32 bg-gray-200 dark:bg-gray-700 rounded"></div>
+      <div className="h-6 w-32 bg-gray-200 dark:bg-gray-700 rounded"></div>
+    </div>
+  </div>
+);
+
+const WatchlistSkeleton = () => (
+  <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-4 animate-pulse">
+    <div className="h-8 w-48 bg-gray-200 dark:bg-gray-700 rounded mb-4"></div>
+    {Array.from({ length: 5 }).map((_, index) => (
+      <div key={index} className="flex justify-between items-center py-3 border-b border-gray-200 dark:border-gray-700">
+        <div className="flex items-center">
+          <div className="h-10 w-10 bg-gray-200 dark:bg-gray-700 rounded-full"></div>
+          <div className="ml-3">
+            <div className="h-5 w-32 bg-gray-200 dark:bg-gray-700 rounded"></div>
+            <div className="h-4 w-24 bg-gray-200 dark:bg-gray-700 rounded mt-1"></div>
+          </div>
+        </div>
+        <div className="h-6 w-20 bg-gray-200 dark:bg-gray-700 rounded"></div>
+      </div>
+    ))}
+  </div>
+);
+
+const PortfolioSkeleton = () => (
+  <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-4 animate-pulse">
+    <div className="h-8 w-48 bg-gray-200 dark:bg-gray-700 rounded mb-4"></div>
+    <div className="grid grid-cols-3 gap-4 mb-4">
+      <div className="h-16 bg-gray-200 dark:bg-gray-700 rounded"></div>
+      <div className="h-16 bg-gray-200 dark:bg-gray-700 rounded"></div>
+      <div className="h-16 bg-gray-200 dark:bg-gray-700 rounded"></div>
+    </div>
+    <div className="h-1 w-full bg-gray-200 dark:bg-gray-700 rounded mb-4"></div>
+    {Array.from({ length: 3 }).map((_, index) => (
+      <div key={index} className="flex justify-between items-center py-3 border-b border-gray-200 dark:border-gray-700">
+        <div className="flex items-center">
+          <div className="h-5 w-32 bg-gray-200 dark:bg-gray-700 rounded"></div>
+        </div>
+        <div className="h-5 w-24 bg-gray-200 dark:bg-gray-700 rounded"></div>
+      </div>
+    ))}
+  </div>
+);
+
 export default function Investing() {
   const { user, logout, getAuthHeader, isAuthenticated } = useAuth();
   const navigate = useNavigate();
@@ -362,6 +435,7 @@ export default function Investing() {
   const [isPlacingOrder, setIsPlacingOrder] = useState(false);
   const [orderError, setOrderError] = useState<string | null>(null);
   const [componentError, setComponentError] = useState<string | null>(null);
+  const [pageLoaded, setPageLoaded] = useState(false);
 
   const authHeader = useMemo(() => getAuthHeader() as AuthHeader, [getAuthHeader]);
 
@@ -667,7 +741,22 @@ export default function Investing() {
     }
   }, [queryError]);
 
-  // ... rest of the component JSX ...
+  // Mark page as loaded after initial render
+  useEffect(() => {
+    // Short delay to prioritize initial render
+    const timeoutId = setTimeout(() => {
+      setPageLoaded(true);
+    }, 100);
+    
+    return () => clearTimeout(timeoutId);
+  }, []);
+
+  // Redirect if not authenticated
+  useEffect(() => {
+    if (!isAuthenticated) {
+      navigate("/login");
+    }
+  }, [isAuthenticated, navigate]);
 
   if (isLoading) return (
     <div className="min-h-screen pt-16 bg-gray-50 dark:bg-dark-bg flex items-center justify-center">

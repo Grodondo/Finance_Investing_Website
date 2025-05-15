@@ -185,8 +185,10 @@ const useRecommendations = (authHeader: AuthHeader) => {
       }
     },
     enabled: !!authHeader,
-    staleTime: 30000, // Consider data fresh for 30 seconds
-    retry: 2, // React Query's built-in retry mechanism
+    staleTime: 5 * 60 * 1000, // 5 minutes
+    gcTime: 10 * 60 * 1000, // 10 minutes
+    retry: 1,
+    refetchOnWindowFocus: false,
   });
 };
 
@@ -204,59 +206,88 @@ const useWatchlistWithHistory = (authHeader: AuthHeader) => {
         }
       });
       
-      if (!watchlistResponse.ok) throw new Error("Failed to fetch watchlist");
+      if (!watchlistResponse.ok) {
+        throw new Error("Failed to fetch watchlist");
+      }
+      
       const watchlistData = await watchlistResponse.json() as WatchlistResponse[];
       
-      // Normalize watchlist data
-      const normalizedWatchlist = watchlistData.map((stock: WatchlistResponse) => ({
-        id: stock.id,
-        symbol: stock.symbol,
-        name: stock.name,
-        currentPrice: stock.current_price || 0,
-        change: stock.change || 0,
-        changePercent: stock.change_percent || 0,
-        volume: stock.volume || 0,
-        marketCap: stock.market_cap || 0,
-        sharesOwned: stock.shares_owned || 0,
-        totalValue: stock.total_value || 0,
-        historicalData: []
-      }));
-
-      // Fetch historical data for each stock in parallel
-      const watchlistWithHistory = await Promise.all(
-        normalizedWatchlist.map(async (stock: Watchlist) => {
-          try {
-            const response = await fetch(`/api/stocks/${stock.symbol}`, {
-              headers: {
-                ...authHeader,
-                "Content-Type": "application/json"
-              }
-            });
-            if (response.ok) {
-              const stockData = await response.json() as StockResponse;
-              return {
-                ...stock,
-                currentPrice: stockData.current_price || stock.currentPrice,
-                change: stockData.change || stock.change,
-                changePercent: stockData.change_percent || stock.changePercent,
-                historicalData: stockData.historical_data?.map(point => ({
-                  date: point.date,
-                  price: point.price,
-                  is_intraday: point.date.includes(' ')
-                })) || []
-              };
+      // Process each stock in the watchlist to include historical data
+      const watchlistWithHistoryPromises = watchlistData.map(async (item) => {
+        try {
+          // Get stock details with historical data
+          const stockResponse = await fetch(`/api/stocks/${item.symbol}`, {
+            headers: {
+              ...authHeader,
+              "Content-Type": "application/json"
             }
-            return stock;
-          } catch {
-            return stock;
+          });
+          
+          if (!stockResponse.ok) {
+            // If we can't get historical data, return item without it
+            return {
+              id: item.id,
+              symbol: item.symbol,
+              name: item.name,
+              currentPrice: item.current_price,
+              change: item.change,
+              changePercent: item.change_percent,
+              volume: item.volume,
+              marketCap: item.market_cap,
+              sharesOwned: item.shares_owned,
+              totalValue: item.total_value,
+              historicalData: []
+            };
           }
-        })
-      );
-
-      return watchlistWithHistory as Watchlist[];
+          
+          const stockData = await stockResponse.json();
+          
+          // Map historicalData to proper format for charts
+          const historicalData = stockData.historical_data?.map((point: any) => ({
+            date: point.date,
+            price: point.price,
+            is_intraday: point.date.includes(' ')
+          })) || [];
+          
+          return {
+            id: item.id,
+            symbol: item.symbol,
+            name: item.name,
+            currentPrice: item.current_price,
+            change: item.change,
+            changePercent: item.change_percent,
+            volume: item.volume,
+            marketCap: item.market_cap,
+            sharesOwned: item.shares_owned,
+            totalValue: item.total_value,
+            historicalData
+          };
+        } catch (error) {
+          console.error(`Error fetching details for ${item.symbol}:`, error);
+          // Return item without historical data in case of error
+          return {
+            id: item.id,
+            symbol: item.symbol,
+            name: item.name,
+            currentPrice: item.current_price,
+            change: item.change,
+            changePercent: item.change_percent,
+            volume: item.volume,
+            marketCap: item.market_cap,
+            sharesOwned: item.shares_owned,
+            totalValue: item.total_value,
+            historicalData: []
+          };
+        }
+      });
+      
+      return Promise.all(watchlistWithHistoryPromises);
     },
     enabled: !!authHeader,
-    staleTime: 30000,
+    staleTime: 5 * 60 * 1000, // 5 minutes
+    gcTime: 10 * 60 * 1000, // 10 minutes
+    retry: 1,
+    refetchOnWindowFocus: false,
   });
 };
 
@@ -914,235 +945,310 @@ const StockChart = ({
   );
 };
 
+// Add this component to show skeleton loading states
+const RecommendedStockSkeleton = ({ index }: { index: number }) => (
+  <div className="bg-white dark:bg-gray-800 shadow-sm rounded-lg overflow-hidden border border-gray-200 dark:border-gray-700">
+    <div className="p-4 flex flex-col">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center">
+          <div className="h-10 w-10 rounded-full bg-gray-200 dark:bg-gray-700 animate-pulse"></div>
+          <div className="ml-3">
+            <div className="h-5 w-32 bg-gray-200 dark:bg-gray-700 rounded animate-pulse"></div>
+            <div className="h-3 w-24 bg-gray-200 dark:bg-gray-700 rounded mt-1 animate-pulse"></div>
+          </div>
+        </div>
+        <div className="h-8 w-24 bg-gray-200 dark:bg-gray-700 rounded animate-pulse"></div>
+      </div>
+      <div className="mt-3 h-24 bg-gray-200 dark:bg-gray-700 rounded animate-pulse"></div>
+      <div className="mt-4 flex items-center justify-between">
+        <div className="h-4 w-32 bg-gray-200 dark:bg-gray-700 rounded animate-pulse"></div>
+        <div className="h-8 w-24 bg-gray-200 dark:bg-gray-700 rounded animate-pulse"></div>
+      </div>
+    </div>
+  </div>
+);
+
+// Add this component to show skeleton loading for charts
+const ChartSkeleton = () => (
+  <div className="bg-white dark:bg-gray-800 p-4 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700">
+    <div className="h-8 w-48 bg-gray-200 dark:bg-gray-700 rounded animate-pulse mb-4"></div>
+    <div className="h-64 bg-gray-200 dark:bg-gray-700 rounded animate-pulse"></div>
+    <div className="flex justify-center mt-4 space-x-2">
+      {['1D', '7D', '30D', '1Y', '5Y'].map((range) => (
+        <div key={range} className="h-8 w-12 bg-gray-200 dark:bg-gray-700 rounded animate-pulse"></div>
+      ))}
+    </div>
+  </div>
+);
+
 export default function Recommendations() {
-  const { getAuthHeader, isAuthenticated } = useAuth();
+  const { isAuthenticated, getAuthHeader } = useAuth();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const [selectedStocks, setSelectedStocks] = useState<string[]>([]);
-  const [timeRange, setTimeRange] = useState<TimeRange>('1Y');
-  const [selectedStock, setSelectedStock] = useState<Stock | null>(null);
-  const [isLoadingRecommendations, setIsLoadingRecommendations] = useState(true);
-  const [showChart, setShowChart] = useState(false);
-  const chartInstanceId = useRef(`chart-instance-${Date.now()}`).current;
-  const chartRef = useRef<any>(null);
-
-  // Auth header - memoized to prevent unnecessary recalculation
+  
+  // Get auth header for API requests
   const authHeader = useMemo(() => getAuthHeader() as AuthHeader, [getAuthHeader]);
-
-  // Use React Query hooks with proper configuration
+  
+  // State to track if initial page render is complete
+  const [isPageLoaded, setIsPageLoaded] = useState(false);
+  
+  // States for UI
+  const [timeRange, setTimeRange] = useState<TimeRange>('30D');
+  const [selectedStocks, setSelectedStocks] = useState<string[]>([]);
+  
+  // Fetch data with React Query
   const { 
-    data: recommendations, 
+    data: recommendedStocks = [],
     isLoading: isRecommendationsLoading,
-    error: recommendationsError 
+    error: recommendationsError
   } = useRecommendations(authHeader);
-
+  
   const { 
-    data: watchlist,
-    isLoading: isWatchlistLoading,
-    error: watchlistError 
+    data: watchlist = [], 
+    isLoading: isWatchlistLoading, 
+    error: watchlistError
   } = useWatchlistWithHistory(authHeader);
-
-  // Show loading state for recommendations initially, then reveal after a delay
+  
+  // Combination loading and error states
+  const isLoading = isRecommendationsLoading || isWatchlistLoading;
+  const hasError = recommendationsError || watchlistError;
+  
+  // Mark page as loaded after initial render
   useEffect(() => {
-    if (!isRecommendationsLoading && recommendations) {
-      const timer = setTimeout(() => {
-        setIsLoadingRecommendations(false);
-      }, 500); // Short delay for smoother UI
-      return () => clearTimeout(timer);
-    }
-  }, [isRecommendationsLoading, recommendations]);
-
-  // Delay chart display until after page loads
+    // Short delay to prioritize initial render
+    const timeoutId = setTimeout(() => {
+      setIsPageLoaded(true);
+    }, 100);
+    
+    return () => clearTimeout(timeoutId);
+  }, []);
+  
+  // Prefetch stock data for watchlist to improve chart loading
   useEffect(() => {
-    if (!isWatchlistLoading && watchlist) {
-      // Delay chart rendering to prioritize UI responsiveness
-      const timer = setTimeout(() => {
-        setShowChart(true);
-      }, 800);
-      return () => clearTimeout(timer);
-    }
-  }, [isWatchlistLoading, watchlist]);
-
-  // Add to watchlist mutation with proper error handling
-  const addToWatchlistMutation = useMutation({
-    mutationFn: async (symbol: string) => {
-      if (!authHeader) throw new Error("Not authenticated");
-      
-      const response = await fetch("/api/watchlist", {
-        method: "POST",
-        headers: {
-          ...authHeader,
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify({ symbol })
+    if (watchlist.length > 0 && isPageLoaded) {
+      // Pre-fetch stock details for all watchlist items (in background)
+      watchlist.forEach(stock => {
+        queryClient.prefetchQuery({
+          queryKey: ['stockDetail', stock.symbol],
+          queryFn: async () => {
+            const response = await fetch(`/api/stocks/${stock.symbol}`, {
+              headers: {
+                ...authHeader,
+                "Content-Type": "application/json"
+              }
+            });
+            if (!response.ok) throw new Error(`Failed to fetch ${stock.symbol}`);
+            return response.json();
+          },
+        });
       });
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.detail || "Failed to add to watchlist");
-      }
-      
-      return symbol; // Return the symbol to fix the void type issue
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['watchlistWithHistory'] });
     }
-  });
-
-  // Initialize selected stocks when watchlist changes
-  useEffect(() => {
-    if (watchlist && watchlist.length > 0) {
-      setSelectedStocks(watchlist.map(stock => stock.symbol));
-    }
-  }, [watchlist]);
-
-  // Authentication check
+  }, [watchlist, queryClient, authHeader, isPageLoaded]);
+  
+  // Redirect to login if not authenticated
   useEffect(() => {
     if (!isAuthenticated) {
       navigate("/login");
     }
   }, [isAuthenticated, navigate]);
-
-  // Memoized callbacks for actions
-  const handleStockSelect = useCallback((symbol: string) => {
-    const stock = recommendations?.find(s => s.symbol === symbol) || null;
-    setSelectedStock(stock);
-  }, [recommendations]);
-
+  
+  // Handle adding a stock to the watchlist
+  const addToWatchlistMutation = useMutation({
+    mutationFn: async (stockSymbol: string) => {
+      // First, search for the stock ID
+      const searchResponse = await fetch(`/api/stocks/search?q=${stockSymbol}`, {
+        headers: {
+          ...authHeader,
+          "Content-Type": "application/json"
+        }
+      });
+      
+      if (!searchResponse.ok) {
+        throw new Error("Failed to search for stock");
+      }
+      
+      const searchResults = await searchResponse.json();
+      
+      if (!searchResults || searchResults.length === 0) {
+        throw new Error("Stock not found");
+      }
+      
+      // Get stock details to get the ID
+      const stockResponse = await fetch(`/api/stocks/${stockSymbol}`, {
+        headers: {
+          ...authHeader,
+          "Content-Type": "application/json"
+        }
+      });
+      
+      if (!stockResponse.ok) {
+        throw new Error("Failed to get stock details");
+      }
+      
+      const stockData = await stockResponse.json();
+      
+      // Add stock to watchlist
+      const addResponse = await fetch("/api/watchlist", {
+        method: "POST",
+        headers: {
+          ...authHeader,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          stock_id: stockData.id
+        })
+      });
+      
+      if (!addResponse.ok) {
+        const errorData = await addResponse.json();
+        throw new Error(errorData.detail || "Failed to add to watchlist");
+      }
+      
+      return addResponse.json();
+    },
+    onSuccess: () => {
+      // Invalidate and refetch watchlist query
+      queryClient.invalidateQueries({ queryKey: ['watchlistWithHistory'] });
+    }
+  });
+  
+  // Handle selecting a stock to display in chart
+  const handleSelectStock = useCallback((symbol: string) => {
+    setSelectedStocks(prev => {
+      // If already in list, remove it; otherwise add it
+      return prev.includes(symbol)
+        ? prev.filter(s => s !== symbol)
+        : [...prev, symbol];
+    });
+  }, []);
+  
+  // Handle adding a stock to watchlist
   const handleAddToWatchlist = useCallback((symbol: string) => {
     addToWatchlistMutation.mutate(symbol);
   }, [addToWatchlistMutation]);
-
-  const handleToggleStockSelection = useCallback((symbol: string) => {
-    setSelectedStocks(prev =>
-      prev.includes(symbol) 
-        ? prev.filter(s => s !== symbol) 
-        : [...prev, symbol]
-    );
-  }, []);
-
-  // Main loading handler - only show loader for initial page render
-  if (isWatchlistLoading && isRecommendationsLoading) return (
-    <div className="min-h-screen pt-16 bg-gray-50 dark:bg-dark-bg flex items-center justify-center">
-      <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600 dark:border-indigo-400"></div>
-    </div>
-  );
-
-  // Handle errors
-  const error = recommendationsError || watchlistError;
-  if (error) return (
-    <div className="min-h-screen pt-16 bg-gray-50 dark:bg-dark-bg flex items-center justify-center">
-      <div className="bg-white dark:bg-dark-surface p-8 rounded-lg shadow-md max-w-md w-full">
-        <h2 className="text-2xl font-bold text-red-600 dark:text-red-400 mb-4">Error</h2>
-        <p className="text-gray-600 dark:text-gray-300 mb-4">
-          {error instanceof Error ? error.message : "An error occurred"}
-        </p>
-        <button onClick={() => window.location.reload()} className="w-full bg-indigo-600 text-white py-2 px-4 rounded-md hover:bg-indigo-700">
-          Try Again
-        </button>
-      </div>
-    </div>
-  );
-
+  
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-dark-bg">
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 pt-24">
-        <h1 className="text-3xl font-bold text-gray-900 dark:text-dark-text mb-8">Stock Recommendations and Watchlist</h1>
-        
-        {/* Top Recommendations */}
-        <div className="bg-white dark:bg-dark-surface rounded-lg shadow-md p-6 mb-6">
-          <h2 className="text-2xl font-bold text-gray-900 dark:text-dark-text mb-6">Top 5 Recommended Stocks This Week</h2>
-          {isLoadingRecommendations ? (
-            <div className="flex justify-center items-center h-40">
-              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600 dark:border-indigo-400"></div>
-            </div>
-          ) : recommendations && recommendations.length > 0 ? (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {recommendations.slice(0, 5).map((stock, index) => (
-                <RecommendedStock 
+    <div className="min-h-screen pt-16 bg-gray-50 dark:bg-gray-900">
+      {/* Main content */}
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        {/* Recommended Stocks Section */}
+        <section className="mb-12">
+          <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-6">
+            Top 5 Recommended Stocks This Week
+          </h2>
+          
+          {/* Recommendations grid */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {hasError ? (
+              <div className="col-span-full bg-red-50 dark:bg-red-900/20 p-4 rounded-md text-red-800 dark:text-red-200">
+                <p>Error loading recommendations. Please try again later.</p>
+              </div>
+            ) : !isPageLoaded || isRecommendationsLoading ? (
+              // Show skeleton loaders while loading
+              Array.from({ length: 5 }).map((_, index) => (
+                <RecommendedStockSkeleton key={index} index={index} />
+              ))
+            ) : recommendedStocks.length > 0 ? (
+              // Show actual recommendations
+              recommendedStocks.map((stock, index) => (
+                <RecommendedStock
                   key={stock.symbol}
                   stock={stock}
                   index={index}
                   onAddToWatchlist={handleAddToWatchlist}
                 />
-              ))}
-            </div>
-          ) : (
-            <div className="flex flex-col items-center justify-center h-40">
-              <p className="text-gray-500 dark:text-gray-400 mb-4">No recommendations available at the moment.</p>
-              <button
-                onClick={() => queryClient.invalidateQueries({ queryKey: ['recommendations'] })}
-                className="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 transition-colors"
-              >
-                Refresh Recommendations
-              </button>
-            </div>
-          )}
-        </div>
-
-        {/* Watchlist */}
-        <div className="bg-white dark:bg-dark-surface rounded-lg shadow-md p-6 mb-6">
-          <h2 className="text-2xl font-bold text-gray-900 dark:text-dark-text mb-6">Your Watchlist</h2>
-          {isWatchlistLoading ? (
-            <div className="flex justify-center items-center h-40">
-              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600 dark:border-indigo-400"></div>
-            </div>
-          ) : watchlist && watchlist.length > 0 ? (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-              {watchlist.map((stock, index) => (
-                <WatchlistStock 
-                  key={stock.id}
+              ))
+            ) : (
+              <div className="col-span-full text-center py-10 bg-white dark:bg-gray-800 rounded-lg shadow">
+                <svg className="mx-auto h-12 w-12 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+                </svg>
+                <h3 className="mt-2 text-lg font-medium text-gray-900 dark:text-white">No recommendations available at the moment</h3>
+                <p className="mt-1 text-gray-500 dark:text-gray-400">Check back later for updated stock recommendations.</p>
+              </div>
+            )}
+          </div>
+        </section>
+        
+        {/* Watchlist Section */}
+        <section className="mb-12">
+          <div className="flex items-center justify-between mb-6">
+            <h2 className="text-2xl font-bold text-gray-900 dark:text-white">
+              Your Watchlist
+            </h2>
+            
+            {/* Time range selector for charts */}
+            <TimeRangeSelector
+              timeRange={timeRange}
+              setTimeRange={setTimeRange}
+            />
+          </div>
+          
+          {/* Chart section */}
+          <div className="mb-8">
+            {hasError ? (
+              <div className="bg-red-50 dark:bg-red-900/20 p-4 rounded-md text-red-800 dark:text-red-200">
+                <p>Error loading watchlist data. Please try again later.</p>
+              </div>
+            ) : !isPageLoaded || isWatchlistLoading || selectedStocks.length === 0 ? (
+              !isPageLoaded || isWatchlistLoading ? (
+                <ChartSkeleton />
+              ) : (
+                <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 text-center">
+                  <p className="text-gray-600 dark:text-gray-300">Select stocks from your watchlist to view their performance.</p>
+                </div>
+              )
+            ) : (
+              <div className="bg-white dark:bg-gray-800 p-4 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700">
+                <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
+                  Performance Comparison
+                </h3>
+                <Suspense fallback={<ChartSkeleton />}>
+                  <StockChart
+                    watchlist={watchlist}
+                    selectedStocks={selectedStocks}
+                    timeRange={timeRange}
+                    instanceId="watchlist-chart"
+                  />
+                </Suspense>
+              </div>
+            )}
+          </div>
+          
+          {/* Watchlist grid */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {hasError ? (
+              <div className="col-span-full bg-red-50 dark:bg-red-900/20 p-4 rounded-md text-red-800 dark:text-red-200">
+                <p>Error loading watchlist. Please try again later.</p>
+              </div>
+            ) : !isPageLoaded || isWatchlistLoading ? (
+              // Show skeleton loaders while loading
+              Array.from({ length: 6 }).map((_, index) => (
+                <RecommendedStockSkeleton key={index} index={index} />
+              ))
+            ) : watchlist.length > 0 ? (
+              // Show actual watchlist
+              watchlist.map((stock, index) => (
+                <WatchlistStock
+                  key={stock.symbol}
                   stock={stock}
                   index={index}
                   isSelected={selectedStocks.includes(stock.symbol)}
-                  onToggleSelect={() => handleToggleStockSelection(stock.symbol)}
-                  onSelect={() => handleStockSelect(stock.symbol)}
+                  onToggleSelect={() => handleSelectStock(stock.symbol)}
+                  onSelect={() => setSelectedStocks([stock.symbol])}
                 />
-              ))}
-            </div>
-          ) : (
-            <p className="text-gray-500 dark:text-gray-400">No stocks in watchlist. Add from recommendations above.</p>
-          )}
-        </div>
-
-        {/* Price History Graph */}
-        <div className="bg-white dark:bg-dark-surface rounded-lg shadow-md p-6 mb-6">
-          <div className="flex justify-between items-center mb-6">
-            <h2 className="text-2xl font-bold text-gray-900 dark:text-dark-text">Watchlist Price History</h2>
-            <TimeRangeSelector timeRange={timeRange} setTimeRange={setTimeRange} />
+              ))
+            ) : (
+              <div className="col-span-full text-center py-10 bg-white dark:bg-gray-800 rounded-lg shadow">
+                <svg className="mx-auto h-12 w-12 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                </svg>
+                <h3 className="mt-2 text-lg font-medium text-gray-900 dark:text-white">No stocks in your watchlist</h3>
+                <p className="mt-1 text-gray-500 dark:text-gray-400">Add stocks from the recommendations to track their performance.</p>
+              </div>
+            )}
           </div>
-          
-          {!showChart ? (
-            <div className="h-[500px] flex items-center justify-center">
-              <div className="animate-pulse flex flex-col items-center">
-                <div className="rounded-lg bg-gray-200 dark:bg-gray-700 h-64 w-full mb-4"></div>
-                <div className="text-gray-500 dark:text-gray-400">Loading chart data...</div>
-              </div>
-            </div>
-          ) : watchlist && watchlist.length > 0 && selectedStocks.length > 0 ? (
-            <Suspense fallback={
-              <div className="h-[500px] flex items-center justify-center">
-                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600 dark:border-indigo-400"></div>
-              </div>
-            }>
-              <StockChart 
-                watchlist={watchlist}
-                selectedStocks={selectedStocks}
-                timeRange={timeRange}
-                instanceId={chartInstanceId}
-                key={`stock-chart-${timeRange}-${selectedStocks.join('-')}`}
-              />
-            </Suspense>
-          ) : (
-            <div className="h-[500px] flex items-center justify-center">
-              <p className="text-gray-500 dark:text-gray-400">
-                {watchlist && watchlist.length === 0 
-                  ? "Add stocks to your watchlist to view price history." 
-                  : "Select stocks from your watchlist to view price history."}
-              </p>
-            </div>
-          )}
-        </div>
+        </section>
       </main>
     </div>
   );
