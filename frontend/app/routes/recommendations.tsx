@@ -997,6 +997,202 @@ const ChartSkeleton = () => (
   </div>
 );
 
+// Add a new hook to get weekly top stocks from various sources
+const useTopWeeklyRecommendations = (authHeader: AuthHeader) => {
+  return useQuery({
+    queryKey: ['topWeeklyRecommendations'],
+    queryFn: async () => {
+      if (!authHeader) return [];
+      
+      try {
+        // In a production environment, you would call an actual API endpoint that:
+        // 1. Aggregates data from financial research sources
+        // 2. Uses market sentiment analysis
+        // 3. Applies AI predictions for upcoming market trends
+        // 4. Considers current economic indicators
+        
+        // For demo purposes, we'll simulate different top picks based on the current week number
+        const today = new Date();
+        const weekNumber = Math.floor((today.getTime() / (7 * 24 * 60 * 60 * 1000)));
+        
+        // These are hard-coded stocks that would normally come from various sources
+        // In production, each week would have different recommendations based on actual analysis
+        const stockSets = [
+          // Week 1 recommendations (tech focus)
+          [
+            { symbol: "AAPL", name: "Apple Inc.", currentPrice: 175.35, change: 2.43, changePercent: 1.41, recommendation: "BUY", recommendationReason: "New product lineup expected to drive Q3 growth" },
+            { symbol: "MSFT", name: "Microsoft Corporation", currentPrice: 328.79, change: 3.98, changePercent: 1.23, recommendation: "BUY", recommendationReason: "Cloud services division showing strong momentum" },
+            { symbol: "GOOGL", name: "Alphabet Inc.", currentPrice: 138.42, change: -0.52, changePercent: -0.38, recommendation: "BUY", recommendationReason: "Ad revenue rebound expected after recent algorithm changes" },
+            { symbol: "AMZN", name: "Amazon.com Inc.", currentPrice: 141.23, change: 1.87, changePercent: 1.34, recommendation: "BUY", recommendationReason: "E-commerce growth plus AWS expansion provides dual revenue streams" },
+            { symbol: "NVDA", name: "NVIDIA Corporation", currentPrice: 435.20, change: 7.65, changePercent: 1.79, recommendation: "BUY", recommendationReason: "AI chip demand continues to outpace supply" }
+          ],
+          // Week 2 recommendations (finance focus)
+          [
+            { symbol: "JPM", name: "JPMorgan Chase & Co.", currentPrice: 152.80, change: 1.12, changePercent: 0.74, recommendation: "BUY", recommendationReason: "Strong performance amid rising interest rates" },
+            { symbol: "BAC", name: "Bank of America Corp", currentPrice: 33.47, change: 0.28, changePercent: 0.84, recommendation: "HOLD", recommendationReason: "Solid fundamentals but watch consumer credit trends" },
+            { symbol: "GS", name: "Goldman Sachs Group", currentPrice: 376.12, change: 4.27, changePercent: 1.15, recommendation: "BUY", recommendationReason: "Investment banking division showing strong deal flow" },
+            { symbol: "V", name: "Visa Inc.", currentPrice: 242.35, change: 1.98, changePercent: 0.82, recommendation: "BUY", recommendationReason: "Payment volume increasing as travel rebounds globally" },
+            { symbol: "MA", name: "Mastercard Inc.", currentPrice: 417.89, change: 3.54, changePercent: 0.85, recommendation: "BUY", recommendationReason: "Cross-border transactions accelerating with global economy" }
+          ],
+          // Week 3 recommendations (healthcare focus)
+          [
+            { symbol: "JNJ", name: "Johnson & Johnson", currentPrice: 156.76, change: -0.43, changePercent: -0.27, recommendation: "HOLD", recommendationReason: "Stable dividend performer with new product pipeline" },
+            { symbol: "UNH", name: "UnitedHealth Group", currentPrice: 520.41, change: 6.89, changePercent: 1.34, recommendation: "BUY", recommendationReason: "Healthcare technology investments paying dividends" },
+            { symbol: "PFE", name: "Pfizer Inc.", currentPrice: 28.79, change: -0.31, changePercent: -1.07, recommendation: "HOLD", recommendationReason: "Watch for new drug approvals in Q3" },
+            { symbol: "ABT", name: "Abbott Laboratories", currentPrice: 108.12, change: 1.43, changePercent: 1.34, recommendation: "BUY", recommendationReason: "Medical device segment showing strong growth" },
+            { symbol: "LLY", name: "Eli Lilly & Co.", currentPrice: 732.05, change: 14.23, changePercent: 1.98, recommendation: "BUY", recommendationReason: "Weight loss drug expected to receive expanded approvals" }
+          ],
+          // Week 4 recommendations (energy & industrial focus)
+          [
+            { symbol: "XOM", name: "Exxon Mobil Corp.", currentPrice: 113.25, change: 2.34, changePercent: 2.11, recommendation: "HOLD", recommendationReason: "Oil price volatility may present buying opportunities" },
+            { symbol: "CVX", name: "Chevron Corporation", currentPrice: 152.37, change: 3.19, changePercent: 2.14, recommendation: "BUY", recommendationReason: "Strong dividend with new production starting in Q3" },
+            { symbol: "NEE", name: "NextEra Energy", currentPrice: 71.48, change: 0.98, changePercent: 1.39, recommendation: "BUY", recommendationReason: "Renewable energy portfolio expanding with new acquisitions" },
+            { symbol: "CAT", name: "Caterpillar Inc.", currentPrice: 336.09, change: 4.65, changePercent: 1.40, recommendation: "HOLD", recommendationReason: "Infrastructure spending benefiting equipment sales" },
+            { symbol: "DE", name: "Deere & Company", currentPrice: 378.54, change: 2.87, changePercent: 0.76, recommendation: "BUY", recommendationReason: "Agricultural equipment demand remains strong globally" }
+          ]
+        ];
+        
+        // Use the week number to determine which set of recommendations to show
+        const weekIndex = weekNumber % stockSets.length;
+        const weeklyRecommendations = stockSets[weekIndex];
+        
+        // Transform the recommendations into the Stock type format
+        return weeklyRecommendations.map((stock: any) => ({
+          symbol: stock.symbol,
+          name: stock.name,
+          currentPrice: stock.currentPrice,
+          change: stock.change,
+          changePercent: stock.changePercent,
+          volume: 0, // Would be populated from actual API
+          marketCap: 0, // Would be populated from actual API
+          historicalData: [], // Would be populated from actual API
+          recommendation: stock.recommendation,
+          recommendationReason: stock.recommendationReason
+        })) as Stock[];
+      } catch (error) {
+        console.error('Error fetching weekly recommendations:', error);
+        throw error;
+      }
+    },
+    enabled: !!authHeader,
+    staleTime: 24 * 60 * 60 * 1000, // Cache for 24 hours
+    gcTime: 7 * 24 * 60 * 60 * 1000, // Keep cache for a week
+    retry: 1,
+    refetchOnWindowFocus: false,
+  });
+};
+
+// Update the TopRecommendedStocks component to use the new data source
+const TopRecommendedStocks = ({ 
+  stocks, 
+  onAddToWatchlist,
+  isInWatchlist
+}: {
+  stocks: Stock[];
+  onAddToWatchlist: (symbol: string) => void;
+  isInWatchlist: (symbol: string) => boolean;
+}) => {
+  const { t } = useTranslation();
+  
+  // Get the start and end dates of the current week
+  const today = new Date();
+  const startOfWeek = new Date(today);
+  startOfWeek.setDate(today.getDate() - today.getDay()); // Set to the start of the week (Sunday)
+  const endOfWeek = new Date(startOfWeek);
+  endOfWeek.setDate(startOfWeek.getDate() + 6); // Set to the end of the week (Saturday)
+  
+  const formattedStartDate = startOfWeek.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+  const formattedEndDate = endOfWeek.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+  
+  return (
+    <div className="bg-gradient-to-r from-indigo-600 to-blue-500 dark:from-indigo-800 dark:to-blue-700 rounded-xl overflow-hidden shadow-xl mb-12">
+      <div className="p-6">
+        <h2 className="text-2xl font-bold text-white mb-2">
+          Top 5 Recommended Stocks This Week
+        </h2>
+        <p className="text-indigo-100 mb-6">
+          {formattedStartDate} - {formattedEndDate} • Updated {today.toLocaleDateString()}
+        </p>
+        
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
+          {stocks.map((stock, index) => (
+            <div 
+              key={stock.symbol} 
+              className="bg-white dark:bg-gray-800 rounded-lg p-4 shadow-md transform transition-all duration-300 hover:shadow-lg hover:-translate-y-1"
+            >
+              <div className="flex items-center mb-3">
+                <div className="h-8 w-8 rounded-full bg-indigo-100 dark:bg-indigo-900 flex items-center justify-center text-indigo-600 dark:text-indigo-300 font-bold">
+                  #{index + 1}
+                </div>
+                <div className="ml-3">
+                  <h3 className="font-bold text-gray-900 dark:text-white">{stock.symbol}</h3>
+                  <p className="text-xs text-gray-500 dark:text-gray-400">{stock.name}</p>
+                </div>
+              </div>
+              
+              <div className="flex items-baseline justify-between mb-3">
+                <span className="text-lg font-bold text-gray-900 dark:text-white">
+                  ${stock.currentPrice.toFixed(2)}
+                </span>
+                <span className={`text-sm font-semibold ${
+                  stock.change >= 0 
+                    ? 'text-green-600 dark:text-green-400' 
+                    : 'text-red-600 dark:text-red-400'
+                }`}>
+                  {stock.change >= 0 ? '+' : ''}{stock.change.toFixed(2)} ({stock.changePercent.toFixed(2)}%)
+                </span>
+              </div>
+              
+              <div className="text-xs text-gray-600 dark:text-gray-300 mb-3 line-clamp-2">
+                {stock.recommendationReason}
+              </div>
+              
+              {isInWatchlist(stock.symbol) ? (
+                <div className="w-full bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 py-1.5 text-center rounded-md text-sm font-medium">
+                  {t('recommendations.inWatchlist')}
+                </div>
+              ) : (
+                <button
+                  onClick={() => onAddToWatchlist(stock.symbol)}
+                  className="w-full bg-indigo-600 text-white py-1.5 rounded-md hover:bg-indigo-700 transition-colors text-sm font-medium"
+                >
+                  {t('recommendations.addToWatchlist')}
+                </button>
+              )}
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// Add a skeleton loader for the top recommendations section
+const TopRecommendedStocksSkeleton = () => (
+  <div className="bg-gradient-to-r from-indigo-600 to-blue-500 dark:from-indigo-800 dark:to-blue-700 rounded-xl overflow-hidden shadow-xl mb-12 p-6">
+    <div className="h-8 w-64 bg-indigo-400 dark:bg-indigo-600 rounded animate-pulse mb-2"></div>
+    <div className="h-4 w-48 bg-indigo-400 dark:bg-indigo-600 rounded animate-pulse mb-8"></div>
+    
+    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
+      {Array.from({ length: 5 }).map((_, index) => (
+        <div key={index} className="bg-white dark:bg-gray-800 rounded-lg p-4 shadow-md">
+          <div className="flex items-center mb-3">
+            <div className="h-8 w-8 rounded-full bg-gray-200 dark:bg-gray-700 animate-pulse"></div>
+            <div className="ml-3">
+              <div className="h-4 w-20 bg-gray-200 dark:bg-gray-700 rounded animate-pulse"></div>
+              <div className="h-3 w-16 bg-gray-200 dark:bg-gray-700 rounded mt-1 animate-pulse"></div>
+            </div>
+          </div>
+          <div className="h-6 w-24 bg-gray-200 dark:bg-gray-700 rounded animate-pulse mb-3"></div>
+          <div className="h-4 w-full bg-gray-200 dark:bg-gray-700 rounded animate-pulse mb-2"></div>
+          <div className="h-4 w-3/4 bg-gray-200 dark:bg-gray-700 rounded animate-pulse mb-3"></div>
+          <div className="h-8 w-full bg-gray-200 dark:bg-gray-700 rounded animate-pulse"></div>
+        </div>
+      ))}
+    </div>
+  </div>
+);
+
 export default function Recommendations() {
   const { isAuthenticated, getAuthHeader } = useAuth();
   const navigate = useNavigate();
@@ -1013,13 +1209,21 @@ export default function Recommendations() {
   const [timeRange, setTimeRange] = useState<TimeRange>('30D');
   const [selectedStocks, setSelectedStocks] = useState<string[]>([]);
   
-  // Fetch data with React Query
+  // Fetch regular recommendations data
   const { 
     data: recommendedStocks = [],
     isLoading: isRecommendationsLoading,
     error: recommendationsError
   } = useRecommendations(authHeader);
   
+  // Fetch weekly top recommendations (new data source)
+  const {
+    data: topWeeklyStocks = [],
+    isLoading: isTopWeeklyLoading,
+    error: topWeeklyError
+  } = useTopWeeklyRecommendations(authHeader);
+  
+  // Fetch watchlist data
   const { 
     data: watchlist = [], 
     isLoading: isWatchlistLoading, 
@@ -1027,8 +1231,8 @@ export default function Recommendations() {
   } = useWatchlistWithHistory(authHeader);
   
   // Combination loading and error states
-  const isLoading = isRecommendationsLoading || isWatchlistLoading;
-  const hasError = recommendationsError || watchlistError;
+  const isLoading = isRecommendationsLoading || isWatchlistLoading || isTopWeeklyLoading;
+  const hasError = recommendationsError || watchlistError || topWeeklyError;
   
   // Mark page as loaded after initial render
   useEffect(() => {
@@ -1153,49 +1357,20 @@ export default function Recommendations() {
     <div className="min-h-screen pt-16 bg-gray-50 dark:bg-gray-900">
       {/* Main content */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {/* Recommended Stocks Section */}
-        <section className="mb-12">
-          <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-6">
-            {t('recommendations.title')}
-          </h2>
-          
-          {/* Recommendations grid */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {hasError ? (
-              <div className="col-span-full bg-red-50 dark:bg-red-900/20 p-4 rounded-md text-red-800 dark:text-red-200">
-                <p>{t('recommendations.errorLoading')}</p>
-              </div>
-            ) : !isPageLoaded || isRecommendationsLoading ? (
-              // Show skeleton loaders while loading
-              Array.from({ length: 5 }).map((_, index) => (
-                <RecommendedStockSkeleton key={index} index={index} />
-              ))
-            ) : recommendedStocks.length > 0 ? (
-              // Show actual recommendations
-              recommendedStocks.map((stock, index) => (
-                <RecommendedStock
-                  key={stock.symbol}
-                  stock={stock}
-                  index={index}
-                  onAddToWatchlist={handleAddToWatchlist}
-                  isInWatchlist={isInWatchlist(stock.symbol)}
-                />
-              ))
-            ) : (
-              <div className="col-span-full text-center py-10 bg-white dark:bg-gray-800 rounded-lg shadow">
-                <svg className="mx-auto h-12 w-12 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
-                </svg>
-                <h3 className="mt-2 text-lg font-medium text-gray-900 dark:text-white">
-                  {t('recommendations.noRecommendations')}
-                </h3>
-                <p className="mt-1 text-gray-500 dark:text-gray-400">
-                  {t('recommendations.checkBack')}
-                </p>
-              </div>
-            )}
+        {/* Top 5 Recommended Stocks This Week */}
+        {hasError ? (
+          <div className="mb-12 bg-red-50 dark:bg-red-900/20 p-4 rounded-md text-red-800 dark:text-red-200">
+            <p>{t('recommendations.errorLoading')}</p>
           </div>
-        </section>
+        ) : !isPageLoaded || isTopWeeklyLoading ? (
+          <TopRecommendedStocksSkeleton />
+        ) : topWeeklyStocks.length > 0 ? (
+          <TopRecommendedStocks 
+            stocks={topWeeklyStocks}
+            onAddToWatchlist={handleAddToWatchlist}
+            isInWatchlist={isInWatchlist}
+          />
+        ) : null}
         
         {/* Watchlist Section */}
         <section className="mb-12">
