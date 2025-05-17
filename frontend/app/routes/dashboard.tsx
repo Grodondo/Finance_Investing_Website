@@ -1207,16 +1207,18 @@ export default function Dashboard() {
   const error = transactionsError || insightsError || watchlistError;
 
   if (isLoading) return (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <div className="grid grid-cols-12 gap-6">
-          <div className="col-span-12 lg:col-span-8">
-            <LoadingPlaceholder type="chart" height="400px" className="mb-6" />
-            <LoadingPlaceholder type="card" className="mb-6" />
-          </div>
-          <div className="col-span-12 lg:col-span-4">
-            <LoadingPlaceholder type="list" className="mb-6" />
-            <LoadingPlaceholder type="card" />
+    <div className="fixed inset-0 bg-gray-50 dark:bg-gray-900">
+      <div className="min-h-screen pt-16">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+          <div className="grid grid-cols-12 gap-6">
+            <div className="col-span-12 lg:col-span-8">
+              <LoadingPlaceholder type="chart" height="400px" className="mb-6" />
+              <LoadingPlaceholder type="card" className="mb-6" />
+            </div>
+            <div className="col-span-12 lg:col-span-4">
+              <LoadingPlaceholder type="list" className="mb-6" />
+              <LoadingPlaceholder type="card" />
+            </div>
           </div>
         </div>
       </div>
