@@ -16,6 +16,8 @@ import {
   Legend,
   Filler
 } from "chart.js";
+import LoadingPlaceholder from "../components/LoadingPlaceholder";
+import { StarIcon } from "@heroicons/react/24/outline";
 
 ChartJS.register(
   CategoryScale,
@@ -356,71 +358,6 @@ const prepareChartData = (data: Stock['historicalData'] | undefined, range: Time
   };
 };
 
-// Add skeleton loaders for different components
-const StockChartSkeleton = () => (
-  <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-4 animate-pulse">
-    <div className="h-8 w-48 bg-gray-200 dark:bg-gray-700 rounded mb-4"></div>
-    <div className="h-64 bg-gray-200 dark:bg-gray-700 rounded"></div>
-    <div className="flex justify-center mt-4 space-x-2">
-      {['1D', '7D', '30D', '1Y'].map((range) => (
-        <div key={range} className="h-8 w-12 bg-gray-200 dark:bg-gray-700 rounded"></div>
-      ))}
-    </div>
-  </div>
-);
-
-const StockInfoSkeleton = () => (
-  <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-4 animate-pulse">
-    <div className="h-8 w-64 bg-gray-200 dark:bg-gray-700 rounded mb-4"></div>
-    <div className="grid grid-cols-2 gap-4">
-      <div className="h-6 w-32 bg-gray-200 dark:bg-gray-700 rounded"></div>
-      <div className="h-6 w-32 bg-gray-200 dark:bg-gray-700 rounded"></div>
-      <div className="h-6 w-32 bg-gray-200 dark:bg-gray-700 rounded"></div>
-      <div className="h-6 w-32 bg-gray-200 dark:bg-gray-700 rounded"></div>
-      <div className="h-6 w-32 bg-gray-200 dark:bg-gray-700 rounded"></div>
-      <div className="h-6 w-32 bg-gray-200 dark:bg-gray-700 rounded"></div>
-    </div>
-  </div>
-);
-
-const WatchlistSkeleton = () => (
-  <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-4 animate-pulse">
-    <div className="h-8 w-48 bg-gray-200 dark:bg-gray-700 rounded mb-4"></div>
-    {Array.from({ length: 5 }).map((_, index) => (
-      <div key={index} className="flex justify-between items-center py-3 border-b border-gray-200 dark:border-gray-700">
-        <div className="flex items-center">
-          <div className="h-10 w-10 bg-gray-200 dark:bg-gray-700 rounded-full"></div>
-          <div className="ml-3">
-            <div className="h-5 w-32 bg-gray-200 dark:bg-gray-700 rounded"></div>
-            <div className="h-4 w-24 bg-gray-200 dark:bg-gray-700 rounded mt-1"></div>
-          </div>
-        </div>
-        <div className="h-6 w-20 bg-gray-200 dark:bg-gray-700 rounded"></div>
-      </div>
-    ))}
-  </div>
-);
-
-const PortfolioSkeleton = () => (
-  <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-4 animate-pulse">
-    <div className="h-8 w-48 bg-gray-200 dark:bg-gray-700 rounded mb-4"></div>
-    <div className="grid grid-cols-3 gap-4 mb-4">
-      <div className="h-16 bg-gray-200 dark:bg-gray-700 rounded"></div>
-      <div className="h-16 bg-gray-200 dark:bg-gray-700 rounded"></div>
-      <div className="h-16 bg-gray-200 dark:bg-gray-700 rounded"></div>
-    </div>
-    <div className="h-1 w-full bg-gray-200 dark:bg-gray-700 rounded mb-4"></div>
-    {Array.from({ length: 3 }).map((_, index) => (
-      <div key={index} className="flex justify-between items-center py-3 border-b border-gray-200 dark:border-gray-700">
-        <div className="flex items-center">
-          <div className="h-5 w-32 bg-gray-200 dark:bg-gray-700 rounded"></div>
-        </div>
-        <div className="h-5 w-24 bg-gray-200 dark:bg-gray-700 rounded"></div>
-      </div>
-    ))}
-  </div>
-);
-
 export default function Investing() {
   const { user, logout, getAuthHeader, isAuthenticated } = useAuth();
   const navigate = useNavigate();
@@ -758,9 +695,139 @@ export default function Investing() {
     }
   }, [isAuthenticated, navigate]);
 
+  // Prefetch data when component mounts
+  useEffect(() => {
+    if (authHeader) {
+      // Prefetch portfolio data
+      queryClient.prefetchQuery({
+        queryKey: ['portfolio'],
+        queryFn: async () => {
+          const response = await fetch("/api/portfolio", {
+            headers: {
+              ...authHeader,
+              "Content-Type": "application/json"
+            }
+          });
+          if (!response.ok) throw new Error("Failed to fetch portfolio data");
+          return response.json();
+        },
+        staleTime: 5 * 60 * 1000,
+        gcTime: 10 * 60 * 1000,
+      });
+
+      // Prefetch watchlist data
+      queryClient.prefetchQuery({
+        queryKey: ['watchlistWithHistory'],
+        queryFn: async () => {
+          const watchlistResponse = await fetch("/api/watchlist", {
+            headers: {
+              ...authHeader,
+              "Content-Type": "application/json"
+            }
+          });
+          
+          if (!watchlistResponse.ok) throw new Error("Failed to fetch watchlist");
+          const watchlistData = await watchlistResponse.json();
+          
+          const normalizedWatchlist = watchlistData.map((stock: WatchlistResponse): Watchlist => ({
+            id: stock.id,
+            symbol: stock.symbol,
+            name: stock.name,
+            currentPrice: stock.current_price || 0,
+            change: stock.change || 0,
+            changePercent: stock.change_percent || 0,
+            volume: stock.volume || 0,
+            marketCap: stock.market_cap || 0,
+            sharesOwned: stock.shares_owned || 0,
+            totalValue: stock.total_value || 0,
+            historicalData: []
+          }));
+
+          // Fetch historical data in parallel with a concurrency limit
+          const concurrencyLimit = 3;
+          const chunks = [];
+          for (let i = 0; i < normalizedWatchlist.length; i += concurrencyLimit) {
+            chunks.push(normalizedWatchlist.slice(i, i + concurrencyLimit));
+          }
+
+          const watchlistWithHistory = [];
+          for (const chunk of chunks) {
+            const chunkResults = await Promise.all(
+              chunk.map(async (stock: Watchlist): Promise<Watchlist> => {
+                try {
+                  const response = await fetch(`/api/stocks/${stock.symbol}`, {
+                    headers: {
+                      ...authHeader,
+                      "Content-Type": "application/json"
+                    }
+                  });
+                  if (response.ok) {
+                    const stockData = await response.json() as StockResponse;
+                    return {
+                      ...stock,
+                      currentPrice: stockData.current_price || stock.currentPrice,
+                      change: stockData.change || stock.change,
+                      changePercent: stockData.change_percent || stock.changePercent,
+                      volume: stockData.volume || stock.volume,
+                      marketCap: stockData.market_cap || stock.marketCap,
+                      historicalData: stockData.historical_data?.map(point => ({
+                        date: point.date,
+                        price: point.price,
+                        is_intraday: point.date.includes(' ')
+                      })) || []
+                    };
+                  }
+                  return stock;
+                } catch {
+                  return stock;
+                }
+              })
+            );
+            watchlistWithHistory.push(...chunkResults);
+          }
+          
+          return watchlistWithHistory;
+        },
+        staleTime: 5 * 60 * 1000,
+        gcTime: 10 * 60 * 1000,
+      });
+    }
+  }, [authHeader, queryClient]);
+
   if (isLoading) return (
-    <div className="min-h-screen pt-16 bg-gray-50 dark:bg-dark-bg flex items-center justify-center">
-      <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600 dark:border-indigo-400"></div>
+    <div className="min-h-screen pt-16 bg-gray-50 dark:bg-dark-bg">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        <div className="grid grid-cols-12 gap-6">
+          <div className="col-span-12 lg:col-span-8">
+            {/* Portfolio Overview */}
+            <div className="bg-white dark:bg-dark-surface rounded-lg shadow-sm p-6 mb-6">
+              <h2 className="text-lg font-medium text-gray-900 dark:text-dark-text mb-6">Portfolio Overview</h2>
+              <LoadingPlaceholder type="card" />
+            </div>
+
+            {/* Stock Search */}
+            <div className="bg-white dark:bg-dark-surface rounded-lg shadow-sm p-6 mb-6">
+              <h2 className="text-lg font-medium text-gray-900 dark:text-dark-text mb-4">Search Stocks</h2>
+              <div className="relative">
+                <input
+                  type="text"
+                  disabled
+                  placeholder="Search by symbol or company name..."
+                  className="w-full px-4 py-2 rounded-md border border-gray-300 dark:border-gray-600 bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400"
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* Watchlist */}
+          <div className="col-span-12 lg:col-span-4">
+            <div className="bg-white dark:bg-dark-surface rounded-lg shadow-sm p-6">
+              <h2 className="text-lg font-medium text-gray-900 dark:text-dark-text mb-4">Watchlist</h2>
+              <LoadingPlaceholder type="list" />
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   );
 
@@ -783,9 +850,7 @@ export default function Investing() {
             <div className="bg-white dark:bg-dark-surface rounded-lg shadow-sm p-6 mb-6">
               <h2 className="text-lg font-medium text-gray-900 dark:text-dark-text mb-6">Portfolio Overview</h2>
               {isLoading ? (
-                <div className="flex justify-center py-8">
-                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600 dark:border-indigo-400"></div>
-                </div>
+                <LoadingPlaceholder type="card" />
               ) : portfolio ? (
                 <div className="space-y-4">
                   <div className="flex items-baseline space-x-4">
@@ -835,7 +900,7 @@ export default function Investing() {
                   </div>
                 </div>
               ) : (
-                <p className="text-gray-500 dark:text-gray-400 text-sm">Unable to load portfolio data. Please try again later.</p>
+                <LoadingPlaceholder type="card" />
               )}
             </div>
 
@@ -853,41 +918,6 @@ export default function Investing() {
                 {isSearching && (
                   <div className="absolute right-3 top-2">
                     <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-indigo-600 dark:border-indigo-400"></div>
-                  </div>
-                )}
-                {searchResults.length > 0 && (
-                  <div className="absolute z-10 w-full mt-1 bg-white dark:bg-dark-surface rounded-md shadow-lg border border-gray-200 dark:border-gray-700">
-                    {searchResults.map((result) => (
-                      <div
-                        key={result.symbol}
-                        className="flex items-center justify-between p-3 hover:bg-gray-50 dark:hover:bg-gray-800 cursor-pointer"
-                        onClick={() => {
-                          handleStockSelect(result.symbol);
-                          setSearchQuery("");
-                          setSearchResults([]);
-                        }}
-                      >
-                        <div>
-                          <p className="text-sm font-medium text-gray-900 dark:text-dark-text">{result.symbol}</p>
-                          <p className="text-xs text-gray-500 dark:text-gray-400">{result.name}</p>
-                        </div>
-                        {isInWatchlist(result.symbol) ? (
-                          <span className="px-3 py-1 text-xs font-medium text-gray-500 dark:text-gray-400">
-                            In Watchlist
-                          </span>
-                        ) : (
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleAddToWatchlist(result.symbol);
-                            }}
-                            className="px-3 py-1 text-xs font-medium text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300"
-                          >
-                            Add to Watchlist
-                          </button>
-                        )}
-                      </div>
-                    ))}
                   </div>
                 )}
               </div>
@@ -993,38 +1023,14 @@ export default function Investing() {
                       {timeRange === '1D' ? 'Intraday' : timeRange === '1Y' ? '1 Year' : 'Daily'} data
                     </div>
                   </div>
-                  <div className="h-96 bg-gray-50 dark:bg-gray-800 rounded-lg p-4">
-                    {selectedStock?.historicalData && selectedStock.historicalData.length > 0 ? (
+                  <div className="h-[400px] bg-white dark:bg-gray-800 rounded-lg p-4">
+                    {isStockLoading ? (
+                      <LoadingPlaceholder type="chart" height="100%" />
+                    ) : chartData ? (
                       <Line
-                        data={prepareChartData(selectedStock.historicalData, timeRange)}
-                        options={{
-                          ...chartOptions,
-                          plugins: {
-                            ...chartOptions.plugins,
-                            tooltip: {
-                              ...chartOptions.plugins.tooltip,
-                              backgroundColor: 'rgba(255, 255, 255, 0.9)',
-                              titleColor: '#000',
-                              bodyColor: '#000',
-                              borderColor: '#e5e7eb',
-                              borderWidth: 1,
-                              padding: 12,
-                              displayColors: false,
-                              callbacks: {
-                                ...chartOptions.plugins.tooltip.callbacks,
-                                label: (context: any) => {
-                                  const value = context.parsed.y;
-                                  const change = value - selectedStock.historicalData[0].price;
-                                  const changePercent = (change / selectedStock.historicalData[0].price) * 100;
-                                  return [
-                                    `$${value.toFixed(2)}`,
-                                    `${change >= 0 ? '+' : ''}${change.toFixed(2)} (${changePercent.toFixed(2)}%)`
-                                  ];
-                                }
-                              }
-                            }
-                          }
-                        }}
+                        data={chartData}
+                        options={chartOptions}
+                        height={400}
                       />
                     ) : (
                       <div className="h-full flex items-center justify-center text-gray-500 dark:text-gray-400">
@@ -1038,76 +1044,79 @@ export default function Investing() {
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   <div className="bg-gray-50 dark:bg-gray-800 rounded-lg p-4">
                     <h4 className="text-lg font-medium text-gray-900 dark:text-dark-text mb-4">Statistics</h4>
-                    <div className="space-y-3">
-                      <div className="flex justify-between">
-                        <span className="text-sm text-gray-500 dark:text-gray-400">Previous Close</span>
-                        <span className="text-sm font-medium text-gray-900 dark:text-dark-text">
-                          ${selectedStock.historicalData?.[0]?.price.toFixed(2) ?? 'N/A'}
-                        </span>
+                    {isStockLoading ? (
+                      <LoadingPlaceholder type="card" />
+                    ) : (
+                      <div className="space-y-3">
+                        <div className="flex justify-between">
+                          <span className="text-sm text-gray-500 dark:text-gray-400">Previous Close</span>
+                          <span className="text-sm font-medium text-gray-900 dark:text-dark-text">
+                            ${selectedStock.historicalData?.[0]?.price.toFixed(2) ?? 'N/A'}
+                          </span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-sm text-gray-500 dark:text-gray-400">Open</span>
+                          <span className="text-sm font-medium text-gray-900 dark:text-dark-text">
+                            ${selectedStock.historicalData?.[0]?.price.toFixed(2) ?? 'N/A'}
+                          </span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-sm text-gray-500 dark:text-gray-400">Day's Range</span>
+                          <span className="text-sm font-medium text-gray-900 dark:text-dark-text">
+                            {selectedStock.historicalData && selectedStock.historicalData.length > 0 ? (
+                              <>
+                                ${Math.min(...selectedStock.historicalData.map(d => d.price)).toFixed(2)} - 
+                                ${Math.max(...selectedStock.historicalData.map(d => d.price)).toFixed(2)}
+                              </>
+                            ) : 'N/A'}
+                          </span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-sm text-gray-500 dark:text-gray-400">52 Week Range</span>
+                          <span className="text-sm font-medium text-gray-900 dark:text-dark-text">
+                            ${selectedStock.fiftyTwoWeekLow?.toFixed(2) ?? 'N/A'} - ${selectedStock.fiftyTwoWeekHigh?.toFixed(2) ?? 'N/A'}
+                          </span>
+                        </div>
                       </div>
-                      <div className="flex justify-between">
-                        <span className="text-sm text-gray-500 dark:text-gray-400">Open</span>
-                        <span className="text-sm font-medium text-gray-900 dark:text-dark-text">
-                          ${selectedStock.historicalData?.[0]?.price.toFixed(2) ?? 'N/A'}
-                        </span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-sm text-gray-500 dark:text-gray-400">Day's Range</span>
-                        <span className="text-sm font-medium text-gray-900 dark:text-dark-text">
-                          {selectedStock.historicalData && selectedStock.historicalData.length > 0 ? (
-                            <>
-                              ${Math.min(...selectedStock.historicalData.map(d => d.price)).toFixed(2)} - 
-                              ${Math.max(...selectedStock.historicalData.map(d => d.price)).toFixed(2)}
-                            </>
-                          ) : 'N/A'}
-                        </span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-sm text-gray-500 dark:text-gray-400">52 Week Range</span>
-                        <span className="text-sm font-medium text-gray-900 dark:text-dark-text">
-                          ${selectedStock.fiftyTwoWeekLow?.toFixed(2) ?? 'N/A'} - ${selectedStock.fiftyTwoWeekHigh?.toFixed(2) ?? 'N/A'}
-                        </span>
-                      </div>
-                    </div>
+                    )}
                   </div>
 
                   <div className="bg-gray-50 dark:bg-gray-800 rounded-lg p-4">
                     <h4 className="text-lg font-medium text-gray-900 dark:text-dark-text mb-4">Trading Information</h4>
-                    <div className="space-y-3">
-                      <div className="flex justify-between">
-                        <span className="text-sm text-gray-500 dark:text-gray-400">Volume</span>
-                        <span className="text-sm font-medium text-gray-900 dark:text-dark-text">
-                          {selectedStock.volume?.toLocaleString() ?? 'N/A'}
-                        </span>
+                    {isStockLoading ? (
+                      <LoadingPlaceholder type="card" />
+                    ) : (
+                      <div className="space-y-3">
+                        <div className="flex justify-between">
+                          <span className="text-sm text-gray-500 dark:text-gray-400">Volume</span>
+                          <span className="text-sm font-medium text-gray-900 dark:text-dark-text">
+                            {selectedStock.volume?.toLocaleString() ?? 'N/A'}
+                          </span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-sm text-gray-500 dark:text-gray-400">Market Cap</span>
+                          <span className="text-sm font-medium text-gray-900 dark:text-dark-text">
+                            ${(selectedStock.marketCap / 1e9).toFixed(2)}B
+                          </span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-sm text-gray-500 dark:text-gray-400">Avg. Volume (30d)</span>
+                          <span className="text-sm font-medium text-gray-900 dark:text-dark-text">
+                            {selectedStock.volume?.toLocaleString() ?? 'N/A'}
+                          </span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-sm text-gray-500 dark:text-gray-400">Beta (5Y Monthly)</span>
+                          <span className="text-sm font-medium text-gray-900 dark:text-dark-text">N/A</span>
+                        </div>
                       </div>
-                      <div className="flex justify-between">
-                        <span className="text-sm text-gray-500 dark:text-gray-400">Market Cap</span>
-                        <span className="text-sm font-medium text-gray-900 dark:text-dark-text">
-                          ${(selectedStock.marketCap / 1e9).toFixed(2)}B
-                        </span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-sm text-gray-500 dark:text-gray-400">Avg. Volume (30d)</span>
-                        <span className="text-sm font-medium text-gray-900 dark:text-dark-text">
-                          {selectedStock.volume?.toLocaleString() ?? 'N/A'}
-                        </span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-sm text-gray-500 dark:text-gray-400">Beta (5Y Monthly)</span>
-                        <span className="text-sm font-medium text-gray-900 dark:text-dark-text">N/A</span>
-                      </div>
-                    </div>
+                    )}
                   </div>
                 </div>
 
                 {stockError && (
                   <div className="mt-4 p-4 bg-yellow-50 dark:bg-yellow-900/20 rounded-lg">
                     <p className="text-sm text-yellow-700 dark:text-yellow-300">{stockError.message}</p>
-                  </div>
-                )}
-                {isStockLoading && (
-                  <div className="flex justify-center py-8">
-                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600 dark:border-indigo-400"></div>
                   </div>
                 )}
               </div>
@@ -1241,9 +1250,7 @@ export default function Investing() {
             <div className="bg-white dark:bg-dark-surface rounded-lg shadow-sm p-6">
               <h2 className="text-lg font-medium text-gray-900 dark:text-dark-text mb-4">Watchlist</h2>
               {isLoading ? (
-                <div className="flex justify-center py-4">
-                  <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-indigo-600 dark:border-indigo-400"></div>
-                </div>
+                <LoadingPlaceholder type="list" />
               ) : watchlist && watchlist.length > 0 ? (
                 <div className="space-y-4">
                   {watchlist.map((stock) => (
@@ -1294,7 +1301,12 @@ export default function Investing() {
                   ))}
                 </div>
               ) : (
-                <p className="text-gray-500 dark:text-gray-400 text-sm">No stocks in watchlist. Use the search above to add stocks.</p>
+                <div className="text-center py-8">
+                  <StarIcon className="mx-auto h-12 w-12 text-gray-400 dark:text-gray-500" />
+                  <p className="mt-2 text-gray-500 dark:text-gray-400">
+                    No stocks in your watchlist. Add stocks from the recommendations page.
+                  </p>
+                </div>
               )}
             </div>
 

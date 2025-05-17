@@ -27,6 +27,7 @@ import {
   BellIcon,
 } from "@heroicons/react/24/outline";
 import React from "react";
+import LoadingPlaceholder from "../components/LoadingPlaceholder";
 
 // Import chart components lazily
 const Line = lazy(() => import("react-chartjs-2").then(module => ({ 
@@ -127,7 +128,7 @@ interface DailyData {
 }
 
 interface WatchlistStock {
-  id: number;
+  id: string;
   symbol: string;
   name: string;
   currentPrice: number;
@@ -137,11 +138,11 @@ interface WatchlistStock {
   marketCap: number;
   sharesOwned: number;
   totalValue: number;
-  historicalData: {
+  historicalData: Array<{
     date: string;
     price: number;
     is_intraday: boolean;
-  }[];
+  }>;
 }
 
 type SectionId = "portfolio-summary" | "market-overview" | "recent-transactions" | "financial-insights" | "watchlist" | "price-alerts";
@@ -247,7 +248,7 @@ const useWatchlistWithHistory = (authHeader: AuthHeader) => {
       const watchlistWithHistory: WatchlistStock[] = [];
       for (const chunk of chunks) {
         const chunkResults = await Promise.all(
-          chunk.map(async (stock: WatchlistStock) => {
+          chunk.map(async (stock: WatchlistStock): Promise<WatchlistStock> => {
             try {
               const response = await fetch(`/api/stocks/${stock.symbol}`, {
                 headers: {
@@ -707,17 +708,17 @@ const DashboardSection = ({ sectionId, transactions, insights, watchlist, select
     <div className="p-6">
       {sectionId === "portfolio-summary" && (
         <div className="space-y-6">
-          <div className="h-80">
-            {!isChartsVisible ? (
-              <div className="h-full flex items-center justify-center">
-                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600 dark:border-indigo-400"></div>
+          {!isChartsVisible ? (
+            <div className="h-[400px] bg-white dark:bg-gray-800 rounded-lg p-4">
+              <LoadingPlaceholder type="chart" height="100%" />
+            </div>
+          ) : (
+            <Suspense fallback={
+              <div className="h-[400px] bg-white dark:bg-gray-800 rounded-lg p-4">
+                <LoadingPlaceholder type="chart" height="100%" />
               </div>
-            ) : (
-              <Suspense fallback={
-                <div className="h-full flex items-center justify-center">
-                  <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600 dark:border-indigo-400"></div>
-                </div>
-              }>
+            }>
+              <div className="bg-white dark:bg-gray-800 rounded-lg p-4">
                 <div className="flex justify-between mb-2">
                   <div></div>
                   <button
@@ -727,58 +728,53 @@ const DashboardSection = ({ sectionId, transactions, insights, watchlist, select
                     Reset Zoom
                   </button>
                 </div>
-                <Line 
-                  key={`transactions-chart-${transactions?.length || 0}-${isChartsVisible}`}
-                  data={transactionsChartData} 
-                  options={transactionsChartOptions} 
-                  ref={transactionsChartRef}
-                />
-              </Suspense>
-            )}
-          </div>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            <div className="bg-green-50 dark:bg-green-900/20 p-4 rounded-lg">
-              <h3 className="text-sm font-medium text-green-800 dark:text-green-200">Total Income</h3>
-              <p className="mt-1 text-2xl font-semibold text-green-900 dark:text-green-100">
-                ${insights?.total_income.toFixed(2) || "0.00"}
-              </p>
-            </div>
-            <div className="bg-red-50 dark:bg-red-900/20 p-4 rounded-lg">
-              <h3 className="text-sm font-medium text-red-800 dark:text-red-200">Total Expenses</h3>
-              <p className="mt-1 text-2xl font-semibold text-red-900 dark:text-red-100">
-                ${insights?.total_expenses.toFixed(2) || "0.00"}
-              </p>
-            </div>
-            <div className={`p-4 rounded-lg ${
-              (insights?.net_balance || 0) >= 0 
-                ? "bg-green-50 dark:bg-green-900/20" 
-                : "bg-red-50 dark:bg-red-900/20"
-            }`}>
-              <h3 className={`text-sm font-medium ${
-                (insights?.net_balance || 0) >= 0 
-                  ? "text-green-800 dark:text-green-200" 
-                  : "text-red-800 dark:text-red-200"
-              }`}>
-                Net Balance
-              </h3>
-              <p className={`mt-1 text-2xl font-semibold ${
-                (insights?.net_balance || 0) >= 0 
-                  ? "text-green-900 dark:text-green-100" 
-                  : "text-red-900 dark:text-red-100"
-              }`}>
-                ${insights?.net_balance?.toFixed(2) || "0.00"}
-              </p>
-            </div>
-          </div>
+                <div className="h-[400px]">
+                  <Line 
+                    key={`transactions-chart-${transactions?.length || 0}-${isChartsVisible}`}
+                    data={transactionsChartData} 
+                    options={{
+                      ...transactionsChartOptions,
+                      maintainAspectRatio: false,
+                      responsive: true
+                    }}
+                    ref={transactionsChartRef}
+                  />
+                </div>
+              </div>
+            </Suspense>
+          )}
         </div>
       )}
       {sectionId === "market-overview" && (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          <div className="bg-gray-50 dark:bg-gray-700 p-4 rounded-lg">
-            <h3 className="text-sm font-medium text-gray-900 dark:text-white">S&P 500</h3>
-            <div className="mt-2 flex items-center justify-between">
-              <p className="text-lg font-semibold text-gray-900 dark:text-white">4,783.45</p>
-              <span className="text-sm text-green-600">+1.2%</span>
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm p-4">
+            <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-2">S&P 500</h3>
+            <div className="flex items-baseline justify-between">
+              <span className="text-2xl font-bold text-gray-900 dark:text-white">4,783.45</span>
+              <span className="text-sm font-medium text-green-600 dark:text-green-400">+1.25%</span>
+            </div>
+            <div className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+              Last updated: {new Date().toLocaleTimeString()}
+            </div>
+          </div>
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm p-4">
+            <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-2">Dow Jones</h3>
+            <div className="flex items-baseline justify-between">
+              <span className="text-2xl font-bold text-gray-900 dark:text-white">37,305.16</span>
+              <span className="text-sm font-medium text-green-600 dark:text-green-400">+0.86%</span>
+            </div>
+            <div className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+              Last updated: {new Date().toLocaleTimeString()}
+            </div>
+          </div>
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm p-4">
+            <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-2">NASDAQ</h3>
+            <div className="flex items-baseline justify-between">
+              <span className="text-2xl font-bold text-gray-900 dark:text-white">14,963.23</span>
+              <span className="text-sm font-medium text-red-600 dark:text-red-400">-0.32%</span>
+            </div>
+            <div className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+              Last updated: {new Date().toLocaleTimeString()}
             </div>
           </div>
         </div>
@@ -788,121 +784,44 @@ const DashboardSection = ({ sectionId, transactions, insights, watchlist, select
           {watchlist && watchlist.length > 0 ? (
             <>
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                {watchlist.map((stock: any, index: number) => (
-                  <div 
-                    key={stock.id} 
-                    className="bg-gray-50 dark:bg-gray-700 rounded-lg p-4 shadow-sm hover:shadow-md transition-shadow"
+                {watchlist.map((stock: WatchlistStock) => (
+                  <div
+                    key={stock.id}
+                    className="bg-white dark:bg-gray-800 rounded-lg shadow-sm p-4 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700"
+                    onClick={() => setSelectedStocks((prev: string[]) => 
+                      prev.includes(stock.symbol)
+                        ? prev.filter((s: string) => s !== stock.symbol)
+                        : [...prev, stock.symbol]
+                    )}
                   >
-                    <div className="flex items-center space-x-2 mb-2">
-                      <div 
-                        className="w-3 h-3 rounded-full" 
-                        style={{ backgroundColor: COLORS[index % COLORS.length] }}
-                      />
-                      <input
-                        type="checkbox"
-                        checked={selectedStocks.includes(stock.symbol)}
-                        onChange={() => setSelectedStocks((prev: string[]) =>
-                          prev.includes(stock.symbol) 
-                            ? prev.filter((s: string) => s !== stock.symbol) 
-                            : [...prev, stock.symbol]
-                        )}
-                        className="cursor-pointer"
-                      />
-                      <div className="flex-1">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-sm font-medium text-gray-900 dark:text-white">{stock.symbol}</p>
+                        <p className="text-xs text-gray-500 dark:text-gray-400">{stock.name}</p>
+                      </div>
+                      <div className="text-right">
                         <p className="text-sm font-medium text-gray-900 dark:text-white">
-                          {stock.symbol}
+                          ${stock.currentPrice?.toFixed(2) ?? '0.00'}
                         </p>
-                        <p className="text-xs text-gray-500 dark:text-gray-400">
-                          {stock.name}
+                        <p className={`text-xs ${
+                          (stock.change ?? 0) >= 0
+                            ? 'text-green-600 dark:text-green-400'
+                            : 'text-red-600 dark:text-red-400'
+                        }`}>
+                          {(stock.change ?? 0) >= 0 ? '+' : ''}{(stock.change ?? 0).toFixed(2)} ({(stock.changePercent ?? 0).toFixed(2)}%)
                         </p>
                       </div>
-                    </div>
-                    <div className="flex justify-between items-center">
-                      <p className="text-sm font-medium text-gray-900 dark:text-white">
-                        ${stock.currentPrice.toFixed(2)}
-                      </p>
-                      <p className={`text-xs ${
-                        stock.change >= 0 
-                          ? 'text-green-600 dark:text-green-400' 
-                          : 'text-red-600 dark:text-red-400'
-                      }`}>
-                        {stock.change >= 0 ? '+' : ''}
-                        {stock.change.toFixed(2)} ({stock.changePercent.toFixed(2)}%)
-                      </p>
                     </div>
                   </div>
                 ))}
               </div>
-              <div className="flex justify-between items-center mb-4">
-                <h3 className="text-lg font-medium text-gray-900 dark:text-white">Price History</h3>
-                <div className="flex space-x-2 items-center">
-                  <button
-                    onClick={handleResetZoom}
-                    className="px-3 py-1 rounded-md text-sm font-medium bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600 mr-4"
-                  >
-                    Reset Zoom
-                  </button>
-                  <button
-                    onClick={() => setTimeRange('1D')}
-                    className={`px-3 py-1 rounded-md text-sm font-medium ${
-                      timeRange === '1D'
-                        ? 'bg-indigo-600 text-white'
-                        : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
-                    }`}
-                  >
-                    1D
-                  </button>
-                  <button
-                    onClick={() => setTimeRange('7D')}
-                    className={`px-3 py-1 rounded-md text-sm font-medium ${
-                      timeRange === '7D'
-                        ? 'bg-indigo-600 text-white'
-                        : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
-                    }`}
-                  >
-                    7D
-                  </button>
-                  <button
-                    onClick={() => setTimeRange('30D')}
-                    className={`px-3 py-1 rounded-md text-sm font-medium ${
-                      timeRange === '30D'
-                        ? 'bg-indigo-600 text-white'
-                        : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
-                    }`}
-                  >
-                    30D
-                  </button>
-                  <button
-                    onClick={() => setTimeRange('1Y')}
-                    className={`px-3 py-1 rounded-md text-sm font-medium ${
-                      timeRange === '1Y'
-                        ? 'bg-indigo-600 text-white'
-                        : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
-                    }`}
-                  >
-                    1Y
-                  </button>
-                  <button
-                    onClick={() => setTimeRange('5Y')}
-                    className={`px-3 py-1 rounded-md text-sm font-medium ${
-                      timeRange === '5Y'
-                        ? 'bg-indigo-600 text-white'
-                        : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
-                    }`}
-                  >
-                    5Y
-                  </button>
-                </div>
-              </div>
-              <div className="h-[400px] bg-gray-50 dark:bg-gray-700 rounded-lg p-4">
+              <div className="h-[400px] bg-white dark:bg-gray-800 rounded-lg p-4">
                 {!isChartsVisible ? (
-                  <div className="h-full flex items-center justify-center">
-                    <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600 dark:border-indigo-400"></div>
-                  </div>
+                  <LoadingPlaceholder type="chart" height="100%" />
                 ) : (
                   <Suspense fallback={
-                    <div className="h-full flex items-center justify-center">
-                      <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600 dark:border-indigo-400"></div>
+                    <div className="h-[400px] bg-white dark:bg-gray-800 rounded-lg p-4">
+                      <LoadingPlaceholder type="chart" height="100%" />
                     </div>
                   }>
                     <Line
@@ -922,49 +841,6 @@ const DashboardSection = ({ sectionId, transactions, insights, watchlist, select
                 No stocks in your watchlist. Add stocks from the recommendations page.
               </p>
             </div>
-          )}
-        </div>
-      )}
-      {sectionId === "recent-transactions" && (
-        <div className="space-y-4">
-          {transactions && transactions.length === 0 ? (
-            <div className="text-center text-gray-500 py-8">No transactions found.</div>
-          ) : (
-            transactions?.slice(0, 5).map((transaction: any) => (
-              <div
-                key={transaction.id}
-                className="flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-700 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-600 transition-colors"
-              >
-                <div className="flex items-center space-x-4">
-                  <div className={`p-2 rounded-full ${
-                    transaction.type === "income" 
-                      ? "bg-green-100 dark:bg-green-900/20" 
-                      : "bg-red-100 dark:bg-red-900/20"
-                  }`}>
-                    {transaction.type === "income" ? (
-                      <ArrowTrendingUpIcon className="h-5 w-5 text-green-600 dark:text-green-400" />
-                    ) : (
-                      <ArrowTrendingDownIcon className="h-5 w-5 text-red-600 dark:text-red-400" />
-                    )}
-                  </div>
-                  <div>
-                    <p className="text-sm font-medium text-gray-900 dark:text-white">
-                      {transaction.description}
-                    </p>
-                    <p className="text-xs text-gray-500">
-                      {new Date(transaction.date).toLocaleDateString()}
-                    </p>
-                  </div>
-                </div>
-                <p className={`text-sm font-medium ${
-                  transaction.type === "income" 
-                    ? "text-green-600 dark:text-green-400" 
-                    : "text-red-600 dark:text-red-400"
-                }`}>
-                  {transaction.type === "income" ? "+" : "-"}${Math.abs(transaction.amount).toFixed(2)}
-                </p>
-              </div>
-            ))
           )}
         </div>
       )}
@@ -994,53 +870,9 @@ const DashboardSection = ({ sectionId, transactions, insights, watchlist, select
                   </p>
                 </div>
               </div>
-              <div>
-                <h3 className="text-sm font-medium text-gray-900 mb-3">Top Expense Categories</h3>
-                <div className="space-y-3">
-                  {insights.top_expense_categories.map((category: CategoryInsight) => (
-                    <div
-                      key={category.category_id}
-                      className="flex items-center justify-between p-3 bg-gray-50 rounded-lg"
-                    >
-                      <div>
-                        <p className="text-sm font-medium text-gray-900">{category.category_name}</p>
-                        <p className="text-xs text-gray-500">{category.transaction_count} transactions</p>
-                      </div>
-                      <p className="text-sm font-medium text-red-600">${category.total_amount.toFixed(2)}</p>
-                    </div>
-                  ))}
-                </div>
-              </div>
-              <div>
-                <h3 className="text-sm font-medium text-gray-900 mb-3">Monthly Trends</h3>
-                <div className="space-y-3">
-                  {insights.monthly_trends.map((trend: MonthlyInsight) => (
-                    <div key={trend.month} className="p-3 bg-gray-50 rounded-lg">
-                      <div className="flex items-center justify-between mb-2">
-                        <p className="text-sm font-medium text-gray-900">
-                          {new Date(trend.month).toLocaleDateString("en-US", { year: "numeric", month: "long" })}
-                        </p>
-                        <p className={`text-sm font-medium ${trend.balance >= 0 ? "text-green-600" : "text-red-600"}`}>
-                          ${trend.balance.toFixed(2)}
-                        </p>
-                      </div>
-                      <div className="grid grid-cols-2 gap-2 text-xs">
-                        <div>
-                          <p className="text-gray-500">Income</p>
-                          <p className="text-green-600">${trend.income.toFixed(2)}</p>
-                        </div>
-                        <div>
-                          <p className="text-gray-500">Expenses</p>
-                          <p className="text-red-600">${trend.expenses.toFixed(2)}</p>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
             </div>
           ) : (
-            <p className="text-gray-500 text-sm">No insights available yet.</p>
+            <LoadingPlaceholder type="card" />
           )}
         </div>
       )}
@@ -1081,6 +913,121 @@ export default function Dashboard() {
 
   // Auth header
   const authHeader = useMemo(() => getAuthHeader() as AuthHeader, [getAuthHeader]);
+
+  // Prefetch data when component mounts
+  useEffect(() => {
+    if (authHeader) {
+      // Prefetch transactions
+      queryClient.prefetchQuery({
+        queryKey: ['transactions'],
+        queryFn: async () => {
+          const response = await fetch("/api/transactions", {
+            headers: {
+              ...authHeader,
+              "Content-Type": "application/json"
+            }
+          });
+          if (!response.ok) throw new Error("Failed to fetch transactions");
+          return response.json();
+        },
+        staleTime: 30000,
+        gcTime: 5 * 60 * 1000,
+      });
+
+      // Prefetch insights
+      queryClient.prefetchQuery({
+        queryKey: ['insights'],
+        queryFn: async () => {
+          const response = await fetch("/api/insights", {
+            headers: {
+              ...authHeader,
+              "Content-Type": "application/json"
+            }
+          });
+          if (!response.ok) throw new Error("Failed to fetch insights");
+          return response.json();
+        },
+        staleTime: 30000,
+        gcTime: 5 * 60 * 1000,
+      });
+
+      // Prefetch watchlist
+      queryClient.prefetchQuery({
+        queryKey: ['watchlistWithHistory'],
+        queryFn: async () => {
+          const watchlistResponse = await fetch("/api/watchlist", {
+            headers: {
+              ...authHeader,
+              "Content-Type": "application/json"
+            }
+          });
+          if (!watchlistResponse.ok) throw new Error("Failed to fetch watchlist");
+          const watchlistData = await watchlistResponse.json();
+          
+          const normalizedWatchlist = watchlistData.map((stock: any) => ({
+            id: stock.id,
+            symbol: stock.symbol,
+            name: stock.name,
+            currentPrice: stock.current_price || 0,
+            change: stock.change || 0,
+            changePercent: stock.change_percent || 0,
+            volume: stock.volume || 0,
+            marketCap: stock.market_cap || 0,
+            sharesOwned: stock.shares_owned || 0,
+            totalValue: stock.total_value || 0,
+            historicalData: []
+          }));
+
+          // Fetch historical data in parallel with a concurrency limit
+          const concurrencyLimit = 3;
+          const chunks = [];
+          for (let i = 0; i < normalizedWatchlist.length; i += concurrencyLimit) {
+            chunks.push(normalizedWatchlist.slice(i, i + concurrencyLimit));
+          }
+
+          const watchlistWithHistory = [];
+          for (const chunk of chunks) {
+            const chunkResults = await Promise.all(
+              chunk.map(async (stock: WatchlistStock): Promise<WatchlistStock> => {
+                try {
+                  const response = await fetch(`/api/stocks/${stock.symbol}`, {
+                    headers: {
+                      ...authHeader,
+                      "Content-Type": "application/json"
+                    }
+                  });
+                  if (response.ok) {
+                    const stockData = await response.json();
+                    return {
+                      ...stock,
+                      currentPrice: stockData.current_price || stock.currentPrice,
+                      change: stockData.change || stock.change,
+                      changePercent: stockData.change_percent || stock.changePercent,
+                      volume: stockData.volume || stock.volume,
+                      marketCap: stockData.market_cap || stock.marketCap,
+                      historicalData: stockData.historical_data?.map((point: any) => ({
+                        date: point.date,
+                        price: point.price,
+                        is_intraday: point.date.includes(' ')
+                      })) || []
+                    };
+                  }
+                  return stock;
+                } catch {
+                  return stock;
+                }
+              })
+            );
+            watchlistWithHistory.push(...chunkResults);
+          }
+
+          return watchlistWithHistory;
+        },
+        staleTime: 30000,
+        gcTime: 5 * 60 * 1000,
+      });
+    }
+  }, [authHeader, queryClient]);
 
   // Data fetching
   const { 
@@ -1260,8 +1207,19 @@ export default function Dashboard() {
   const error = transactionsError || insightsError || watchlistError;
 
   if (isLoading) return (
-    <div className="min-h-screen pt-16 flex items-center justify-center">
-      <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600"></div>
+    <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        <div className="grid grid-cols-12 gap-6">
+          <div className="col-span-12 lg:col-span-8">
+            <LoadingPlaceholder type="chart" height="400px" className="mb-6" />
+            <LoadingPlaceholder type="card" className="mb-6" />
+          </div>
+          <div className="col-span-12 lg:col-span-4">
+            <LoadingPlaceholder type="list" className="mb-6" />
+            <LoadingPlaceholder type="card" />
+          </div>
+        </div>
+      </div>
     </div>
   );
 
@@ -1282,6 +1240,11 @@ export default function Dashboard() {
     </div>
   );
 
+  const getGridColumnClass = (item: DashboardItem) => {
+    if (isCompact) return "";
+    return item.isFullWidth ? "col-span-2" : "";
+  };
+
   const getSectionTitle = (sectionId: SectionId) => {
     return {
       "portfolio-summary": "Portfolio Summary",
@@ -1291,12 +1254,6 @@ export default function Dashboard() {
       "financial-insights": "Financial Insights",
       "price-alerts": "Price Alerts"
     }[sectionId];
-  };
-
-  // Instead of using react-beautiful-dnd, let's create a basic draggable layout
-  const getGridColumnClass = (item: DashboardItem) => {
-    if (isCompact) return "";
-    return item.isFullWidth ? "col-span-2" : "";
   };
 
   return (
