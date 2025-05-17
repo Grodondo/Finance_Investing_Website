@@ -15,7 +15,6 @@ import {
   Filler,
   TimeScale
 } from "chart.js";
-import { DragDropContext, Droppable, Draggable } from "react-beautiful-dnd";
 import { 
   Bars3BottomLeftIcon, 
   ArrowTrendingUpIcon, 
@@ -900,6 +899,7 @@ export default function Dashboard() {
   const [isChartsVisible, setIsChartsVisible] = useState(false);
   const [watchlistChartRef, setWatchlistChartRef] = useState<any>(null);
   const [transactionsChartRef, setTransactionsChartRef] = useState<any>(null);
+  const chartInstancesRef = useRef<{ [key: string]: any }>({});
   const [dashboardItems, setDashboardItems] = useState<DashboardItem[]>([
     { id: "item-portfolio-summary", sectionId: "portfolio-summary", isFullWidth: true },
     { id: "item-market-overview", sectionId: "market-overview", isFullWidth: true },
@@ -908,9 +908,8 @@ export default function Dashboard() {
     { id: "item-financial-insights", sectionId: "financial-insights", isFullWidth: false },
     { id: "item-price-alerts", sectionId: "price-alerts", isFullWidth: false }
   ]);
-  const [draggedItem, setDraggedItem] = useState<number | null>(null);
-  const chartInstancesRef = useRef<{ [key: string]: any }>({});
-
+  const [draggingIndex, setDraggingIndex] = useState<number | null>(null);
+  
   // Auth header
   const authHeader = useMemo(() => getAuthHeader() as AuthHeader, [getAuthHeader]);
 
@@ -1155,31 +1154,73 @@ export default function Dashboard() {
     }
   }, [isTransactionsLoading, transactionsError, isInsightsLoading, insightsError, isWatchlistLoading, watchlistError]);
 
-  // HTML5 Drag and Drop functions
-  const handleDragStart = (index: number) => {
-    setDraggedItem(index);
+  // Update the drag and drop handlers with better visual feedback
+  const handleDragStart = (e: React.DragEvent<HTMLDivElement>, index: number) => {
+    setDraggingIndex(index);
+    e.dataTransfer.setData('text/plain', index.toString());
+    
+    // Add styling to the dragged element
+    if (e.currentTarget) {
+      e.currentTarget.classList.add('opacity-50', 'ring-2', 'ring-indigo-500', 'z-50');
+    }
+    
+    // Add drop zone indicators to all other items
+    document.querySelectorAll('.dashboard-item').forEach((item, i) => {
+      if (i !== index) {
+        item.classList.add('drop-target');
+      }
+    });
   };
 
-  const handleDragOver = (e: React.DragEvent, index: number) => {
+  const handleDragEnter = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    // Highlight the current drop target
+    e.currentTarget.classList.add('bg-indigo-50', 'dark:bg-indigo-900/20', 'border-2', 'border-dashed', 'border-indigo-300');
+  };
+
+  const handleDragLeave = (e: React.DragEvent<HTMLDivElement>) => {
+    // Remove highlight when leaving a drop target
+    e.currentTarget.classList.remove('bg-indigo-50', 'dark:bg-indigo-900/20', 'border-2', 'border-dashed', 'border-indigo-300');
+  };
+
+  const handleDragOver = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    // Add highlight to the current drop target
+    e.currentTarget.classList.add('bg-indigo-50', 'dark:bg-indigo-900/20', 'border-2', 'border-dashed', 'border-indigo-300');
+  };
+
+  const handleDrop = (e: React.DragEvent<HTMLDivElement>, dropIndex: number) => {
     e.preventDefault();
     
-    if (draggedItem === null) return;
-    if (draggedItem === index) return;
-
-    const newItems = [...dashboardItems];
-    const draggedItemContent = newItems[draggedItem];
+    if (draggingIndex === null || draggingIndex === dropIndex) return;
     
-    // Remove the dragged item
-    newItems.splice(draggedItem, 1);
-    // Add it at the new position
-    newItems.splice(index, 0, draggedItemContent);
+    // Move the dragged item to the new position
+    const newItems = [...dashboardItems];
+    const [draggedItem] = newItems.splice(draggingIndex, 1);
+    newItems.splice(dropIndex, 0, draggedItem);
     
     setDashboardItems(newItems);
-    setDraggedItem(index);
+    setDraggingIndex(null);
+    
+    // Clean up all styling
+    document.querySelectorAll('.dashboard-item').forEach((item) => {
+      item.classList.remove('drop-target', 'bg-indigo-50', 'dark:bg-indigo-900/20', 'border-2', 'border-dashed', 'border-indigo-300');
+    });
   };
 
-  const handleDragEnd = () => {
-    setDraggedItem(null);
+  const handleDragEnd = (e: React.DragEvent<HTMLDivElement>) => {
+    setDraggingIndex(null);
+    
+    // Remove all styling
+    if (e.currentTarget) {
+      e.currentTarget.classList.remove('opacity-50', 'ring-2', 'ring-indigo-500', 'z-50');
+    }
+    
+    // Clean up all drop zone indicators
+    document.querySelectorAll('.dashboard-item').forEach((item) => {
+      item.classList.remove('drop-target', 'bg-indigo-50', 'dark:bg-indigo-900/20', 'border-2', 'border-dashed', 'border-indigo-300');
+    });
   };
 
   useEffect(() => {
@@ -1202,6 +1243,35 @@ export default function Dashboard() {
       setSelectedStocks(watchlist.map(stock => stock.symbol));
     }
   }, [watchlist]);
+
+  // Add this to useEffect to add a style tag for drop targets
+  useEffect(() => {
+    // Add CSS for drop targets
+    const style = document.createElement('style');
+    style.innerHTML = `
+      .drop-target {
+        transition: all 0.2s ease;
+      }
+      .drop-target::before {
+        content: '';
+        position: absolute;
+        inset: 0;
+        border: 2px dashed transparent;
+        border-radius: 0.5rem;
+        pointer-events: none;
+        z-index: 10;
+      }
+      .dashboard-item.drop-target:hover::before {
+        border-color: #6366f1;
+        background-color: rgba(99, 102, 241, 0.05);
+      }
+    `;
+    document.head.appendChild(style);
+    
+    return () => {
+      document.head.removeChild(style);
+    };
+  }, []);
 
   const isLoading = isTransactionsLoading || isInsightsLoading || isWatchlistLoading;
   const error = transactionsError || insightsError || watchlistError;
@@ -1243,8 +1313,8 @@ export default function Dashboard() {
   );
 
   const getGridColumnClass = (item: DashboardItem) => {
-    if (isCompact) return "";
-    return item.isFullWidth ? "col-span-2" : "";
+    if (isCompact) return "col-span-1";
+    return item.isFullWidth ? "col-span-2" : "col-span-1";
   };
 
   const getSectionTitle = (sectionId: SectionId) => {
@@ -1307,17 +1377,18 @@ export default function Dashboard() {
       </header>
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <div className={`grid gap-6 ${isCompact ? 'grid-cols-1' : 'grid-cols-2'}`}>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           {dashboardItems.map((item, index) => (
-            <div
+            <div 
               key={item.id}
               draggable
-              onDragStart={() => handleDragStart(index)}
-              onDragOver={(e) => handleDragOver(e, index)}
+              onDragStart={(e) => handleDragStart(e, index)}
+              onDragEnter={handleDragEnter}
+              onDragLeave={handleDragLeave}
+              onDragOver={handleDragOver}
+              onDrop={(e) => handleDrop(e, index)}
               onDragEnd={handleDragEnd}
-              className={`bg-white dark:bg-gray-800 rounded-lg shadow-sm ${getGridColumnClass(item)} ${
-                draggedItem === index ? 'border-2 border-indigo-500 opacity-70' : ''
-              }`}
+              className={`${getGridColumnClass(item)} dashboard-item bg-white dark:bg-gray-800 rounded-lg shadow-sm transition-all duration-200`}
             >
               <div className="flex items-center justify-between p-4 border-b border-gray-200 dark:border-gray-700 cursor-move">
                 <h2 className="text-lg font-medium text-gray-900 dark:text-white">
@@ -1325,9 +1396,10 @@ export default function Dashboard() {
                 </h2>
                 <div className="flex items-center space-x-2">
                   <span className="text-xs text-gray-500 dark:text-gray-400">Drag to reorder</span>
-                  <Bars3BottomLeftIcon className="h-5 w-5 text-gray-400 dark:text-gray-500 cursor-move" />
+                  <Bars3BottomLeftIcon className="h-5 w-5 text-gray-400 dark:text-gray-500" />
                 </div>
               </div>
+              
               <DashboardSection 
                 sectionId={item.sectionId}
                 transactions={transactions}
