@@ -24,6 +24,8 @@ from ..models.user import User
 
 # Set up logger
 logger = logging.getLogger(__name__)
+# Set a flag to track if we've logged stock analysis errors to avoid spamming logs
+_logged_analysis_errors = set()
 
 router = APIRouter()
 
@@ -96,16 +98,16 @@ async def get_stock_data(symbol: str, db: Session) -> StockDetail:
     try:
         # Check if we have the stock in database
         db_stock = db.query(Stock).filter(Stock.symbol == symbol).first()
-        logger.info(f"Database lookup for {symbol}: {'Found' if db_stock else 'Not found'}")
+        logger.debug(f"Database lookup for {symbol}: {'Found' if db_stock else 'Not found'}")
         
         # Get data from Yahoo Finance
-        logger.info(f"Fetching data for symbol: {symbol}")
+        logger.debug(f"Fetching data for symbol: {symbol}")
         ticker = yf.Ticker(symbol)
         
         # Get basic info first
         try:
             info = ticker.info
-            logger.info(f"Successfully fetched basic info for {symbol}")
+            logger.debug(f"Successfully fetched basic info for {symbol}")
             logger.debug(f"Available info keys: {list(info.keys())}")
         except Exception as e:
             logger.error(f"Error fetching basic info for {symbol}: {str(e)}")
@@ -121,8 +123,8 @@ async def get_stock_data(symbol: str, db: Session) -> StockDetail:
         five_year_start_date = end_date - timedelta(days=365*5)  # 5 years
         one_year_start_date = end_date - timedelta(days=365)    # 1 year
         
-        logger.info(f"Fetching 5-year historical data from {five_year_start_date} to {end_date}")
-        logger.info(f"Fetching 1-year historical data from {one_year_start_date} to {end_date}")
+        logger.debug(f"Fetching 5-year historical data from {five_year_start_date} to {end_date}")
+        logger.debug(f"Fetching 1-year historical data from {one_year_start_date} to {end_date}")
         
         try:
             # Fetch intraday data for 1-day view with 5-minute intervals
@@ -166,7 +168,7 @@ async def get_stock_data(symbol: str, db: Session) -> StockDetail:
         
         # Process 5-year daily data (we'll filter for other periods in the frontend)
         if not five_year_hist.empty:
-            logger.info(f"Processing {len(five_year_hist)} daily data points")
+            logger.debug(f"Processing {len(five_year_hist)} daily data points")
             for date, row in five_year_hist.iterrows():
                 try:
                     historical_data.append({
@@ -177,18 +179,18 @@ async def get_stock_data(symbol: str, db: Session) -> StockDetail:
                 except Exception as e:
                     logger.error(f"Error processing daily data point for {symbol}: {str(e)}")
                     continue
-            logger.info(f"Successfully processed {len(historical_data)} daily data points")
+            logger.debug(f"Successfully processed {len(historical_data)} daily data points")
             if len(historical_data) > 0:
                 logger.debug(f"First daily point: {historical_data[0]}")
                 logger.debug(f"Last daily point: {historical_data[-1]}")
         
         # Process intraday data (for 1D view)
         if not intraday_hist.empty:
-            logger.info(f"Processing {len(intraday_hist)} intraday data points")
+            logger.debug(f"Processing {len(intraday_hist)} intraday data points")
             # Filter to only include today's data
             today = datetime.now().date()
             intraday_hist = intraday_hist[intraday_hist.index.date == today]
-            logger.info(f"Filtered to {len(intraday_hist)} intraday data points for today")
+            logger.debug(f"Filtered to {len(intraday_hist)} intraday data points for today")
             
             for date, row in intraday_hist.iterrows():
                 try:
@@ -201,7 +203,7 @@ async def get_stock_data(symbol: str, db: Session) -> StockDetail:
                 except Exception as e:
                     logger.error(f"Error processing intraday data point for {symbol}: {str(e)}")
                     continue
-            logger.info(f"Successfully processed {len(intraday_hist)} intraday data points")
+            logger.debug(f"Successfully processed {len(intraday_hist)} intraday data points")
             if len(intraday_hist) > 0:
                 # Log the first and last intraday points
                 intraday_points = [d for d in historical_data if d['is_intraday']]
@@ -209,11 +211,11 @@ async def get_stock_data(symbol: str, db: Session) -> StockDetail:
                     logger.debug(f"First intraday point: {intraday_points[0]}")
                     logger.debug(f"Last intraday point: {intraday_points[-1]}")
         else:
-            logger.warning(f"No intraday data available for {symbol}")
+            logger.debug(f"No intraday data available for {symbol}")
         
         # Sort data by date
         historical_data.sort(key=lambda x: x['date'])
-        logger.info(f"Total historical data points: {len(historical_data)}")
+        logger.debug(f"Total historical data points: {len(historical_data)}")
         logger.debug(f"Sample of historical data: {historical_data[:2]}")  # Log first two points
         logger.debug(f"Intraday points count: {sum(1 for d in historical_data if d['is_intraday'])}")
         logger.debug(f"Daily points count: {sum(1 for d in historical_data if not d['is_intraday'])}")
@@ -235,7 +237,7 @@ async def get_stock_data(symbol: str, db: Session) -> StockDetail:
                 'historical_data': historical_data,
                 'last_updated': current_time
             }
-            logger.info(f"Stock data prepared successfully for {symbol}")
+            logger.debug(f"Stock data prepared successfully for {symbol}")
             logger.debug(f"Stock data keys: {list(stock_data.keys())}")
         except Exception as e:
             logger.error(f"Error preparing stock data for {symbol}: {str(e)}")
@@ -251,15 +253,15 @@ async def get_stock_data(symbol: str, db: Session) -> StockDetail:
                     if key not in ['historical_data', 'last_updated']:
                         setattr(db_stock, key, value)
                 db_stock.last_updated = current_time
-                logger.info(f"Updated existing stock record for {symbol}")
+                logger.debug(f"Updated existing stock record for {symbol}")
             else:
                 db_stock = Stock(**{k: v for k, v in stock_data.items() if k not in ['historical_data', 'last_updated']})
                 db.add(db_stock)
-                logger.info(f"Created new stock record for {symbol}")
+                logger.debug(f"Created new stock record for {symbol}")
             
             db.commit()
             db.refresh(db_stock)  # Refresh to get the ID if it's a new record
-            logger.info(f"Database updated successfully for {symbol}")
+            logger.debug(f"Database updated successfully for {symbol}")
             
             # Add the ID to the stock_data dictionary
             stock_data['id'] = db_stock.id
@@ -376,27 +378,24 @@ async def get_stock_recommendations(
 
                 # Factor 1: Price momentum (last 7 days)
                 if len(stock_data.historical_data) >= 7:
-                    daily_data = [d for d in stock_data.historical_data if not d.get('is_intraday', False)]
+                    daily_data = [d for d in stock_data.historical_data if not getattr(d, 'is_intraday', False)]
                     if len(daily_data) >= 7:
-                        week_ago_price = daily_data[-7]['price']
-                        current_price = stock_data.current_price
-                        price_change = ((current_price - week_ago_price) / week_ago_price) * 100
+                        week_ago_price = daily_data[-7].price
+                        current_price = daily_data[-1].price
+                        momentum = (current_price - week_ago_price) / week_ago_price * 100
                         
-                        logger.debug(f"{symbol} price change over 7 days: {price_change:.1f}%")
+                        logger.debug(f"{symbol} 7-day momentum: {momentum:.1f}%")
                         
-                        if price_change > 5:
-                            score += 2
-                            reasons.append(f"Strong positive momentum: +{price_change:.1f}% in 7 days")
-                        elif price_change > 2:
+                        if momentum > 5:
                             score += 1
-                            reasons.append(f"Positive momentum: +{price_change:.1f}% in 7 days")
-                        elif price_change < -5:
+                            reasons.append("Strong upward momentum")
+                        elif momentum < -5:
                             score -= 1
-                            reasons.append(f"Negative momentum: {price_change:.1f}% in 7 days")
+                            reasons.append("Strong downward momentum")
                     else:
-                        logger.debug(f"{symbol} has only {len(daily_data)} daily data points")
+                        logger.debug(f"{symbol} has only {len(daily_data)} daily data points for momentum calculation")
                 else:
-                    logger.debug(f"{symbol} has only {len(stock_data.historical_data)} historical data points")
+                    logger.debug(f"{symbol} has only {len(stock_data.historical_data)} historical data points for momentum calculation")
 
                 # Factor 2: Volume analysis
                 avg_volume = stock_data.volume
@@ -420,9 +419,9 @@ async def get_stock_recommendations(
 
                 # Factor 4: Price stability
                 if len(stock_data.historical_data) >= 30:
-                    daily_data = [d for d in stock_data.historical_data if not d.get('is_intraday', False)]
+                    daily_data = [d for d in stock_data.historical_data if not getattr(d, 'is_intraday', False)]
                     if len(daily_data) >= 30:
-                        prices = [d['price'] for d in daily_data[-30:]]
+                        prices = [d.price for d in daily_data[-30:]]
                         volatility = (max(prices) - min(prices)) / min(prices) * 100
                         
                         logger.debug(f"{symbol} 30-day volatility: {volatility:.1f}%")
@@ -446,7 +445,13 @@ async def get_stock_recommendations(
                 recommendations.append(stock_data)
 
             except Exception as e:
-                logger.error(f"Error analyzing {symbol}: {str(e)}")
+                error_key = f"{symbol}:{str(e)}"
+                if error_key not in _logged_analysis_errors:
+                    logger.error(f"Error analyzing {symbol}: {str(e)}")
+                    _logged_analysis_errors.add(error_key)
+                    # Limit the size of the set to avoid memory growth
+                    if len(_logged_analysis_errors) > 100:
+                        _logged_analysis_errors.clear()
                 continue
 
         # Sort recommendations by score and take top 5
@@ -529,7 +534,7 @@ async def get_portfolio(
         total_value += holding.total_value
         
         # Get previous day's value
-        previous_price = stock_data.historical_data[-2]['price'] if len(stock_data.historical_data) > 1 else current_price
+        previous_price = stock_data.historical_data[-2].price if len(stock_data.historical_data) > 1 else current_price
         previous_value += holding.shares * previous_price
     
     daily_change = total_value - previous_value

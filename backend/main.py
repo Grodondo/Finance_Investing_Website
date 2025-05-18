@@ -16,6 +16,12 @@ logging.basicConfig(
     ]
 )
 
+# Prevent duplicate logs by configuring uvicorn loggers
+logging.getLogger("uvicorn").handlers = []
+logging.getLogger("uvicorn.access").handlers = []
+logging.getLogger("uvicorn.error").handlers = []
+logging.getLogger("uvicorn").propagate = True
+
 # Load environment variables
 load_dotenv()
 

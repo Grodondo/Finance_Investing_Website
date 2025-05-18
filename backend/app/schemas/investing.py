@@ -30,6 +30,7 @@ class StockHistoricalData(BaseModel):
 class HistoricalDataPoint(BaseModel):
     date: str
     price: float
+    is_intraday: bool = False
 
     class Config:
         from_attributes = True

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import { useForum } from '../contexts/ForumContext';
 import { useAuth } from '../contexts/AuthContext';
@@ -39,6 +39,27 @@ const ForumNotifications: React.FC = () => {
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const { user } = useAuth();
+  const notificationRef = useRef<HTMLDivElement>(null);
+  const buttonRef = useRef<HTMLButtonElement>(null);
+  
+  // Close notification panel when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (
+        notificationRef.current && 
+        buttonRef.current &&
+        !notificationRef.current.contains(event.target as Node) &&
+        !buttonRef.current.contains(event.target as Node)
+      ) {
+        setIsOpen(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, []);
   
   // Simulate loading notifications - in a real app, this would come from API
   useEffect(() => {
@@ -189,6 +210,7 @@ const ForumNotifications: React.FC = () => {
         onClick={toggleNotifications}
         className="relative p-2 text-gray-600 dark:text-gray-300 hover:text-indigo-600 dark:hover:text-indigo-400 focus:outline-none"
         aria-label="Notifications"
+        ref={buttonRef}
       >
         <BellIcon className="h-6 w-6" />
         {unreadCount > 0 && (
@@ -200,7 +222,7 @@ const ForumNotifications: React.FC = () => {
       
       {/* Notification Panel */}
       {isOpen && (
-        <div className="absolute right-0 mt-2 w-80 bg-white dark:bg-gray-800 rounded-md shadow-lg overflow-hidden z-20 border border-gray-200 dark:border-gray-700">
+        <div className="absolute right-0 mt-2 w-80 bg-white dark:bg-gray-800 rounded-md shadow-lg overflow-hidden z-20 border border-gray-200 dark:border-gray-700" ref={notificationRef}>
           <div className="p-3 border-b border-gray-200 dark:border-gray-700 flex justify-between items-center">
             <h3 className="text-sm font-medium text-gray-900 dark:text-white">Notifications</h3>
             {unreadCount > 0 && (
