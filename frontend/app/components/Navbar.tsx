@@ -5,6 +5,8 @@ import { Bars3Icon, XMarkIcon, UserCircleIcon } from "@heroicons/react/24/outlin
 import LanguageSelector from "./LanguageSelector";
 import { useTranslation } from "react-i18next";
 
+const defaultProfilePic = "/default-profile.png";
+
 // Helper to get the saved profile picture from localStorage
 const getSavedProfilePicture = (): string | null => {
   try {
@@ -51,16 +53,16 @@ export default function Navbar() {
     const savedProfilePicture = getSavedProfilePicture();
     if (savedProfilePicture) {
       setProfilePicture(savedProfilePicture);
-    } else if (user?.profilePicture) {
-      setProfilePicture(user.profilePicture);
+    } else if (user?.profile_picture) {
+      setProfilePicture(user.profile_picture);
     }
 
     // Check localStorage first for user name
     const savedUserData = getSavedUserData();
-    if (savedUserData?.name) {
-      setUserName(savedUserData.name);
-    } else if (user?.name) {
-      setUserName(user.name);
+    if (savedUserData?.username) {
+      setUserName(savedUserData.username);
+    } else if (user?.username) {
+      setUserName(user.username);
     }
   }, [user]);
 
@@ -183,8 +185,8 @@ export default function Navbar() {
             {/* Desktop user menu */}
             {user && (
               <div className="hidden md:flex items-center space-x-4">
-                <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                  {t('common.welcome', 'Welcome')}, {userName || user.name || "User"}
+                <span className="text-sm font-medium text-gray-700">
+                  {t('common.welcome', 'Welcome')}, {userName || user.username || "User"}
                 </span>
                 <div className="relative">
                   <button 
@@ -193,15 +195,11 @@ export default function Navbar() {
                     onClick={() => setIsProfileMenuOpen(!isProfileMenuOpen)}
                   >
                     <div className="h-8 w-8 rounded-full bg-indigo-100 dark:bg-indigo-900 overflow-hidden">
-                      {profilePicture ? (
-                        <img 
-                          src={profilePicture} 
-                          alt={userName || user.name || "User"} 
-                          className="h-full w-full object-cover"
-                        />
-                      ) : (
-                        <UserCircleIcon className="h-full w-full text-indigo-600 dark:text-indigo-400" />
-                      )}
+                      <img
+                        src={user?.profile_picture || defaultProfilePic}
+                        alt={user?.username || "User"}
+                        className="h-full w-full object-cover"
+                      />
                     </div>
                     <span className="sr-only">Open user menu</span>
                   </button>
@@ -268,20 +266,16 @@ export default function Navbar() {
               <div className="flex items-center px-4 py-2">
                 <div className="flex-shrink-0 mr-3">
                   <div className="h-10 w-10 rounded-full bg-indigo-100 dark:bg-indigo-900 overflow-hidden">
-                    {profilePicture ? (
-                      <img 
-                        src={profilePicture} 
-                        alt={userName || user.name || "User"} 
-                        className="h-full w-full object-cover"
-                      />
-                    ) : (
-                      <UserCircleIcon className="h-full w-full text-indigo-600 dark:text-indigo-400" />
-                    )}
+                    <img
+                      src={user?.profile_picture || defaultProfilePic}
+                      alt={user?.username || "User"}
+                      className="h-full w-full object-cover"
+                    />
                   </div>
                 </div>
                 <div>
-                  <p className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                    {userName || user.name || "User"}
+                  <p className="text-sm font-medium text-gray-700">
+                    {userName || user.username || "User"}
                   </p>
                   <p className="text-xs text-gray-500 dark:text-gray-400">
                     {user.email}

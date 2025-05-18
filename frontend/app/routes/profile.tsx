@@ -11,7 +11,17 @@ import {
   ExclamationCircleIcon,
   CameraIcon,
   PlusIcon,
+  KeyIcon,
+  LockClosedIcon,
+  EnvelopeIcon,
 } from "@heroicons/react/24/outline";
+
+// QR Code library
+import { QRCodeSVG } from 'qrcode.react';
+
+// Import the 2FA components
+import TwoFactorSetup from '../components/TwoFactorSetup';
+import TwoFactorDisable from '../components/TwoFactorDisable';
 
 // Credit card types with their validation patterns
 const CARD_TYPES = {
@@ -166,10 +176,11 @@ const userProfileStorage = {
   },
   
   // Save user profile data
-  saveProfileData: (name: string | undefined, email: string | undefined, is2FAEnabled: boolean) => {
+  saveProfileData: (username: string | undefined, email: string | undefined, secondaryEmail: string | undefined, is2FAEnabled: boolean) => {
     const userData = { 
-      name: name || 'User', 
-      email: email || 'user@example.com', 
+      username: username || 'User', 
+      email: email || 'user@example.com',
+      secondaryEmail: secondaryEmail || '',
       is2FAEnabled 
     };
     localStorage.setItem('userData', JSON.stringify(userData));
@@ -193,15 +204,25 @@ export default function Profile() {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // State for user details
-  const [name, setName] = useState(user?.name || "");
+  const [username, setUsername] = useState(user?.username || "");
   const [email, setEmail] = useState(user?.email || "");
+  const [secondaryEmail, setSecondaryEmail] = useState("");
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
   const [isEditingProfile, setIsEditingProfile] = useState(false);
-  const [profilePicture, setProfilePicture] = useState<string | null>(user?.profilePicture || null);
+  const [isChangingPassword, setIsChangingPassword] = useState(false);
+  const [profile_picture, setProfile_picture] = useState<string | undefined>(user?.profile_picture || undefined);
   const [is2FAEnabled, setIs2FAEnabled] = useState(user?.is2FAEnabled || false);
   const [showQRCode, setShowQRCode] = useState(false);
   const [verificationCode, setVerificationCode] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [message, setMessage] = useState({ text: "", type: "" });
+  const [passwordErrors, setPasswordErrors] = useState({
+    currentPassword: "",
+    newPassword: "",
+    confirmPassword: ""
+  });
 
   // State for credit cards
   const [creditCards, setCreditCards] = useState<Partial<CreditCard>[]>([]);
@@ -221,6 +242,13 @@ export default function Profile() {
     cvv: "",
   });
 
+  // Add qrCodeValue state
+  const [qrCodeValue, setQrCodeValue] = useState("");
+
+  // Add 2FA state
+  const [showTwoFactorSetup, setShowTwoFactorSetup] = useState(false);
+  const [showTwoFactorDisable, setShowTwoFactorDisable] = useState(false);
+
   // Fetch user data including profile picture, 2FA status, and credit cards
   useEffect(() => {
     if (!isAuthenticated) {
@@ -239,18 +267,20 @@ export default function Profile() {
         
         // If we have stored user data, use it
         if (storedUserData) {
-          setName(storedUserData.name || user?.name || "User");
+          setUsername(storedUserData.username || user?.username || "User");
           setEmail(storedUserData.email || user?.email || "user@example.com");
+          setSecondaryEmail(storedUserData.secondaryEmail || "");
           setIs2FAEnabled(storedUserData.is2FAEnabled || false);
         } else {
           // Otherwise use data from AuthContext
-          setName(user?.name || "User");
+          setUsername(user?.username || "User");
           setEmail(user?.email || "user@example.com");
+          setSecondaryEmail("");
           setIs2FAEnabled(user?.is2FAEnabled || false);
         }
         
         // Set profile picture from localStorage or AuthContext
-        setProfilePicture(storedProfilePic || user?.profilePicture || null);
+        setProfile_picture(storedProfilePic || user?.profile_picture || undefined);
         
         // Set credit cards from localStorage
         setCreditCards(storedCards);
@@ -276,14 +306,14 @@ export default function Profile() {
       
       reader.onloadend = () => {
         const result = reader.result as string;
-        setProfilePicture(result);
+        setProfile_picture(result || undefined);
         
         // Store in localStorage to persist between sessions
         userProfileStorage.saveProfilePicture(result);
         
         // Update user context with new profile picture
         if (updateUserProfile) {
-          updateUserProfile({ profilePicture: result });
+          updateUserProfile({ profile_picture: result || undefined });
         }
         
         setMessage({
@@ -312,11 +342,15 @@ export default function Profile() {
       await new Promise(resolve => setTimeout(resolve, 500));
       
       // Save to localStorage to persist between sessions
-      userProfileStorage.saveProfileData(name, email, is2FAEnabled);
+      userProfileStorage.saveProfileData(username, email, secondaryEmail, is2FAEnabled);
       
       // Update user in context
       if (updateUserProfile) {
-        updateUserProfile({ name, email });
+        updateUserProfile({ 
+          username: username, 
+          email: email,
+          profile_picture: profile_picture 
+        });
       }
       
       setIsEditingProfile(false);
@@ -335,20 +369,142 @@ export default function Profile() {
     }
   };
 
+  // Handle password change
+  const handlePasswordChange = async () => {
+    // Reset errors
+    setPasswordErrors({
+      currentPassword: "",
+      newPassword: "",
+      confirmPassword: ""
+    });
+
+    // Validate passwords
+    let hasErrors = false;
+    const errors = {
+      currentPassword: "",
+      newPassword: "",
+      confirmPassword: ""
+    };
+
+    if (!currentPassword) {
+      errors.currentPassword = "Current password is required";
+      hasErrors = true;
+    }
+
+    if (!newPassword) {
+      errors.newPassword = "New password is required";
+      hasErrors = true;
+    } else if (newPassword.length < 8) {
+      errors.newPassword = "Password must be at least 8 characters";
+      hasErrors = true;
+    }
+
+    if (!confirmPassword) {
+      errors.confirmPassword = "Please confirm your new password";
+      hasErrors = true;
+    } else if (newPassword !== confirmPassword) {
+      errors.confirmPassword = "Passwords do not match";
+      hasErrors = true;
+    }
+
+    if (hasErrors) {
+      setPasswordErrors(errors);
+      return;
+    }
+
+    try {
+      setIsLoading(true);
+      
+      // Mock API call - in a real app this would update the backend
+      await new Promise(resolve => setTimeout(resolve, 500));
+      
+      // Reset password fields
+      setCurrentPassword("");
+      setNewPassword("");
+      setConfirmPassword("");
+      setIsChangingPassword(false);
+      
+      setMessage({
+        text: "Password updated successfully!",
+        type: "success",
+      });
+    } catch (error) {
+      console.error("Error updating password:", error);
+      setMessage({
+        text: "Failed to update password. Please check your current password.",
+        type: "error",
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   // Validate credit card
   const validateCardNumber = (number: string): boolean => {
     // Basic validation using Luhn algorithm
-    number = number.replace(/\s+/g, "");
+    const digits = number.replace(/\s+/g, "").split('')
+      .map(x => parseInt(x, 10));
+    
+    for (let i = digits.length - 2; i >= 0; i -= 2) {
+      let val = digits[i] * 2;
+      if (val > 9) val -= 9;
+      digits[i] = val;
+    }
+    
+    const sum = digits.reduce((acc, val) => acc + val, 0);
     
     // Check if the card matches any known patterns
     for (const type in CARD_TYPES) {
       if (CARD_TYPES[type as keyof typeof CARD_TYPES].pattern.test(number)) {
         setNewCard({ ...newCard, type });
-        return true;
+        return sum % 10 === 0; // Valid Luhn algorithm check
       }
     }
     
     return false;
+  };
+
+  // Format expiry date properly
+  const formatExpiryDate = (value: string) => {
+    value = value.replace(/\D/g, "");
+    if (value.length > 0) {
+      // Insert / after MM if length is 2 or more
+      if (value.length >= 2) {
+        const month = parseInt(value.substring(0, 2), 10);
+        // Ensure month is between 1-12
+        if (month < 1) {
+          value = '01' + value.substring(2);
+        } else if (month > 12) {
+          value = '12' + value.substring(2);
+        }
+        value = value.substring(0, 2) + '/' + value.substring(2);
+      }
+      // Limit to MM/YY format (5 chars total)
+      value = value.substring(0, 5);
+    }
+    return value;
+  };
+
+  // Validate card expiry date
+  const validateExpiryDate = (expiryDate: string): boolean => {
+    if (!expiryDate || expiryDate.length !== 5) return false;
+    
+    const [monthStr, yearStr] = expiryDate.split('/');
+    const month = parseInt(monthStr, 10);
+    const year = parseInt(yearStr, 10) + 2000; // Convert YY to 20YY
+    
+    const now = new Date();
+    const currentYear = now.getFullYear();
+    const currentMonth = now.getMonth() + 1; // JS months are 0-indexed
+    
+    // Check if date is valid (MM between 1-12)
+    if (month < 1 || month > 12) return false;
+    
+    // Check if expiry date is in the future
+    if (year < currentYear) return false;
+    if (year === currentYear && month < currentMonth) return false;
+    
+    return true;
   };
 
   // Handle adding new credit card
@@ -362,10 +518,13 @@ export default function Profile() {
       cvv: "",
     };
 
-    if (!newCard.cardNumber) {
+    // Clean card number (remove spaces)
+    const cleanCardNumber = newCard.cardNumber.replace(/\s+/g, "");
+
+    if (!cleanCardNumber) {
       errors.cardNumber = "Card number is required";
       hasErrors = true;
-    } else if (!validateCardNumber(newCard.cardNumber)) {
+    } else if (!validateCardNumber(cleanCardNumber)) {
       errors.cardNumber = "Invalid card number";
       hasErrors = true;
     }
@@ -378,18 +537,9 @@ export default function Profile() {
     if (!newCard.expiryDate) {
       errors.expiryDate = "Expiry date is required";
       hasErrors = true;
-    } else {
-      const [month, year] = newCard.expiryDate.split("/");
-      const currentYear = new Date().getFullYear() % 100;
-      const currentMonth = new Date().getMonth() + 1;
-      
-      if (
-        parseInt(year, 10) < currentYear ||
-        (parseInt(year, 10) === currentYear && parseInt(month, 10) < currentMonth)
-      ) {
-        errors.expiryDate = "Card is expired";
-        hasErrors = true;
-      }
+    } else if (!validateExpiryDate(newCard.expiryDate)) {
+      errors.expiryDate = "Invalid or expired date";
+      hasErrors = true;
     }
 
     if (!newCard.cvv) {
@@ -415,7 +565,7 @@ export default function Profile() {
       const createdCard = {
         ...newCard,
         id: `card-${Date.now()}`,
-        cardNumber: newCard.cardNumber.replace(/\s+/g, "")
+        cardNumber: cleanCardNumber
       };
       
       // Store card securely (in localStorage for demo purposes)
@@ -484,9 +634,13 @@ export default function Profile() {
       setIsLoading(true);
       
       // Mock API call to setup 2FA
+      // In a real app, the server would generate a secret and return it
       await new Promise(resolve => setTimeout(resolve, 500));
       
-      // In a real app, we would get a QR code from the backend
+      // Generate a mock 2FA secret (in a real app, this would come from the server)
+      const mockSecret = generateMockSecret();
+      setQrCodeValue(`otpauth://totp/PersonalFinanceManager:${email}?secret=${mockSecret}&issuer=PersonalFinanceManager`);
+      
       setShowQRCode(true);
     } catch (error) {
       console.error("Error setting up 2FA:", error);
@@ -497,6 +651,16 @@ export default function Profile() {
     } finally {
       setIsLoading(false);
     }
+  };
+
+  // Generate a mock 2FA secret (in a real app, this would be done on the server)
+  const generateMockSecret = () => {
+    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
+    let result = '';
+    for (let i = 0; i < 32; i++) {
+      result += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    return result;
   };
 
   // Verify 2FA code
@@ -514,10 +678,11 @@ export default function Profile() {
         setVerificationCode("");
         
         // Save to localStorage
-        const userData = userProfileStorage.getProfileData() || { name: "", email: "" };
+        const userData = userProfileStorage.getProfileData() || { username: "", email: "" };
         userProfileStorage.saveProfileData(
-          name, 
+          username, 
           email, 
+          secondaryEmail, 
           true
         );
         
@@ -555,10 +720,11 @@ export default function Profile() {
       setIs2FAEnabled(false);
       
       // Save to localStorage
-      const userData = userProfileStorage.getProfileData() || { name: "", email: "" };
+      const userData = userProfileStorage.getProfileData() || { username: "", email: "", secondaryEmail: "" };
       userProfileStorage.saveProfileData(
-        name, 
+        username, 
         email, 
+        secondaryEmail, 
         false
       );
       
@@ -594,6 +760,24 @@ export default function Profile() {
     return `•••• •••• •••• ${last4}`;
   };
 
+  // Add handler for 2FA setup completion
+  const handleTwoFactorSetupComplete = () => {
+    setShowTwoFactorSetup(false);
+    // Update user profile to reflect 2FA is enabled
+    if (user) {
+      updateUserProfile({ ...user, is2FAEnabled: true });
+    }
+  };
+
+  // Add handler for 2FA disable completion
+  const handleTwoFactorDisableComplete = () => {
+    setShowTwoFactorDisable(false);
+    // Update user profile to reflect 2FA is disabled
+    if (user) {
+      updateUserProfile({ ...user, is2FAEnabled: false });
+    }
+  };
+
   if (isLoading && !user) {
     return (
       <div className="min-h-screen pt-16 flex items-center justify-center">
@@ -611,9 +795,9 @@ export default function Profile() {
             <div className="absolute -bottom-14 left-8">
               <div className="relative">
                 <div className="h-28 w-28 rounded-full bg-white dark:bg-gray-700 p-1 shadow-lg">
-                  {profilePicture ? (
+                  {profile_picture ? (
                     <img
-                      src={profilePicture}
+                      src={profile_picture}
                       alt="Profile"
                       className="h-full w-full rounded-full object-cover"
                     />
@@ -667,7 +851,10 @@ export default function Profile() {
                   Profile Information
                 </h2>
                 <button
-                  onClick={() => setIsEditingProfile(!isEditingProfile)}
+                  onClick={() => {
+                    setIsEditingProfile(!isEditingProfile);
+                    setIsChangingPassword(false);
+                  }}
                   className="flex items-center text-sm font-medium text-indigo-600 dark:text-indigo-400 hover:text-indigo-500 dark:hover:text-indigo-300"
                 >
                   {isEditingProfile ? "Cancel" : "Edit"}
@@ -684,16 +871,16 @@ export default function Profile() {
                   <div className="space-y-4">
                     <div>
                       <label
-                        htmlFor="name"
+                        htmlFor="username"
                         className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1"
                       >
-                        Name
+                        Username
                       </label>
                       <input
                         type="text"
-                        id="name"
-                        value={name}
-                        onChange={(e) => setName(e.target.value)}
+                        id="username"
+                        value={username}
+                        onChange={(e) => setUsername(e.target.value)}
                         className="w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-gray-900 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
                       />
                     </div>
@@ -702,45 +889,174 @@ export default function Profile() {
                         htmlFor="email"
                         className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1"
                       >
-                        Email
+                        Primary Email (cannot be changed)
                       </label>
                       <input
                         type="email"
                         id="email"
                         value={email}
-                        onChange={(e) => setEmail(e.target.value)}
+                        disabled
+                        className="w-full rounded-md border border-gray-300 dark:border-gray-600 bg-gray-100 dark:bg-gray-700 px-3 py-2 text-gray-900 dark:text-white shadow-sm cursor-not-allowed"
+                      />
+                      <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                        Contact support if you need to change your primary email.
+                      </p>
+                    </div>
+                    <div>
+                      <label
+                        htmlFor="secondaryEmail"
+                        className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1"
+                      >
+                        Secondary Email (for account recovery)
+                      </label>
+                      <input
+                        type="email"
+                        id="secondaryEmail"
+                        value={secondaryEmail}
+                        onChange={(e) => setSecondaryEmail(e.target.value)}
+                        placeholder="backup@example.com"
                         className="w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-gray-900 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
                       />
+                      <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                        Add a backup email address to recover your account if needed.
+                      </p>
                     </div>
-                    <div className="flex justify-end">
+                    <div className="flex justify-between items-center pt-4 border-t border-gray-200 dark:border-gray-600">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsChangingPassword(!isChangingPassword);
+                        }}
+                        className="text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300 text-sm font-medium"
+                      >
+                        Change Password
+                      </button>
                       <button
                         onClick={saveProfileChanges}
-                        className="mt-2 px-4 py-2 bg-indigo-600 dark:bg-indigo-500 text-white rounded-md hover:bg-indigo-700 dark:hover:bg-indigo-400 transition-colors"
+                        className="px-4 py-2 bg-indigo-600 dark:bg-indigo-500 text-white rounded-md hover:bg-indigo-700 dark:hover:bg-indigo-400 transition-colors"
                       >
                         Save Changes
                       </button>
                     </div>
+                    
+                    {isChangingPassword && (
+                      <div className="mt-4 p-4 bg-gray-50 dark:bg-gray-600 rounded-md space-y-4">
+                        <h3 className="text-md font-medium text-gray-900 dark:text-white mb-2">
+                          Change Password
+                        </h3>
+                        <div>
+                          <label
+                            htmlFor="currentPassword"
+                            className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1"
+                          >
+                            Current Password
+                          </label>
+                          <input
+                            type="password"
+                            id="currentPassword"
+                            value={currentPassword}
+                            onChange={(e) => setCurrentPassword(e.target.value)}
+                            className={`w-full rounded-md border ${
+                              passwordErrors.currentPassword
+                                ? "border-red-300 dark:border-red-600"
+                                : "border-gray-300 dark:border-gray-600"
+                            } bg-white dark:bg-gray-800 px-3 py-2 text-gray-900 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500`}
+                          />
+                          {passwordErrors.currentPassword && (
+                            <p className="mt-1 text-sm text-red-600 dark:text-red-400">
+                              {passwordErrors.currentPassword}
+                            </p>
+                          )}
+                        </div>
+                        <div>
+                          <label
+                            htmlFor="newPassword"
+                            className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1"
+                          >
+                            New Password
+                          </label>
+                          <input
+                            type="password"
+                            id="newPassword"
+                            value={newPassword}
+                            onChange={(e) => setNewPassword(e.target.value)}
+                            className={`w-full rounded-md border ${
+                              passwordErrors.newPassword
+                                ? "border-red-300 dark:border-red-600"
+                                : "border-gray-300 dark:border-gray-600"
+                            } bg-white dark:bg-gray-800 px-3 py-2 text-gray-900 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500`}
+                          />
+                          {passwordErrors.newPassword && (
+                            <p className="mt-1 text-sm text-red-600 dark:text-red-400">
+                              {passwordErrors.newPassword}
+                            </p>
+                          )}
+                        </div>
+                        <div>
+                          <label
+                            htmlFor="confirmPassword"
+                            className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1"
+                          >
+                            Confirm New Password
+                          </label>
+                          <input
+                            type="password"
+                            id="confirmPassword"
+                            value={confirmPassword}
+                            onChange={(e) => setConfirmPassword(e.target.value)}
+                            className={`w-full rounded-md border ${
+                              passwordErrors.confirmPassword
+                                ? "border-red-300 dark:border-red-600"
+                                : "border-gray-300 dark:border-gray-600"
+                            } bg-white dark:bg-gray-800 px-3 py-2 text-gray-900 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500`}
+                          />
+                          {passwordErrors.confirmPassword && (
+                            <p className="mt-1 text-sm text-red-600 dark:text-red-400">
+                              {passwordErrors.confirmPassword}
+                            </p>
+                          )}
+                        </div>
+                        <div className="flex justify-end">
+                          <button
+                            onClick={handlePasswordChange}
+                            className="px-4 py-2 bg-indigo-600 dark:bg-indigo-500 text-white rounded-md hover:bg-indigo-700 dark:hover:bg-indigo-400 transition-colors"
+                          >
+                            Update Password
+                          </button>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 ) : (
                   <div className="space-y-4">
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <div>
                         <p className="text-sm font-medium text-gray-500 dark:text-gray-400">
-                          Name
+                          Username
                         </p>
                         <p className="mt-1 text-base font-medium text-gray-900 dark:text-white">
-                          {name}
+                          {username}
                         </p>
                       </div>
                       <div>
                         <p className="text-sm font-medium text-gray-500 dark:text-gray-400">
-                          Email
+                          Primary Email
                         </p>
                         <p className="mt-1 text-base font-medium text-gray-900 dark:text-white">
                           {email}
                         </p>
                       </div>
                     </div>
+                    {secondaryEmail && (
+                      <div>
+                        <p className="text-sm font-medium text-gray-500 dark:text-gray-400">
+                          Secondary Email
+                        </p>
+                        <p className="mt-1 text-base font-medium text-gray-900 dark:text-white">
+                          {secondaryEmail}
+                        </p>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
@@ -823,25 +1139,32 @@ export default function Profile() {
                         >
                           Card Number
                         </label>
-                        <input
-                          type="text"
-                          id="cardNumber"
-                          value={newCard.cardNumber}
-                          onChange={(e) => {
-                            const value = e.target.value.replace(/\D/g, "");
-                            setNewCard({
-                              ...newCard,
-                              cardNumber: formatCardNumber(value),
-                            });
-                          }}
-                          placeholder="1234 5678 9012 3456"
-                          maxLength={19}
-                          className={`w-full rounded-md border ${
-                            cardErrors.cardNumber
-                              ? "border-red-300 dark:border-red-600"
-                              : "border-gray-300 dark:border-gray-600"
-                          } bg-white dark:bg-gray-800 px-3 py-2 text-gray-900 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500`}
-                        />
+                        <div className="flex items-center relative">
+                          <input
+                            type="text"
+                            id="cardNumber"
+                            value={newCard.cardNumber}
+                            onChange={(e) => {
+                              const value = e.target.value.replace(/\D/g, "");
+                              setNewCard({
+                                ...newCard,
+                                cardNumber: formatCardNumber(value),
+                              });
+                            }}
+                            placeholder="1234 5678 9012 3456"
+                            maxLength={19}
+                            className={`w-full rounded-md border ${
+                              cardErrors.cardNumber
+                                ? "border-red-300 dark:border-red-600"
+                                : "border-gray-300 dark:border-gray-600"
+                            } bg-white dark:bg-gray-800 px-3 py-2 text-gray-900 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 pl-10`}
+                          />
+                          <div className="absolute left-3 top-1/2 transform -translate-y-1/2">
+                            {newCard.type && CARD_ICONS[newCard.type as keyof typeof CARD_ICONS] 
+                              ? CARD_ICONS[newCard.type as keyof typeof CARD_ICONS] 
+                              : <CreditCardIcon className="h-5 w-5 text-gray-400" />}
+                          </div>
+                        </div>
                         {cardErrors.cardNumber && (
                           <p className="mt-1 text-sm text-red-600 dark:text-red-400">
                             {cardErrors.cardNumber}
@@ -891,13 +1214,10 @@ export default function Profile() {
                             id="expiryDate"
                             value={newCard.expiryDate}
                             onChange={(e) => {
-                              let value = e.target.value.replace(/\D/g, "");
-                              if (value.length > 2) {
-                                value = `${value.slice(0, 2)}/${value.slice(2, 4)}`;
-                              }
+                              const formattedExpiryDate = formatExpiryDate(e.target.value);
                               setNewCard({
                                 ...newCard,
-                                expiryDate: value,
+                                expiryDate: formattedExpiryDate,
                               });
                             }}
                             placeholder="MM/YY"
@@ -947,6 +1267,9 @@ export default function Profile() {
                           )}
                         </div>
                       </div>
+                      <div className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+                        Your card information is securely stored and encrypted.
+                      </div>
                       <div className="flex justify-end">
                         <button
                           onClick={handleAddCard}
@@ -983,14 +1306,14 @@ export default function Profile() {
                   </div>
                   {is2FAEnabled ? (
                     <button
-                      onClick={handleDisable2FA}
+                      onClick={() => setShowTwoFactorDisable(true)}
                       className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 transition-colors"
                     >
                       Disable
                     </button>
                   ) : (
                     <button
-                      onClick={handleEnable2FA}
+                      onClick={() => setShowTwoFactorSetup(true)}
                       className="px-4 py-2 bg-indigo-600 dark:bg-indigo-500 text-white rounded-md hover:bg-indigo-700 dark:hover:bg-indigo-400 transition-colors"
                     >
                       Enable
@@ -1005,14 +1328,19 @@ export default function Profile() {
                       Set up Two-Factor Authentication
                     </h3>
                     <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
-                      Scan this QR code with your authenticator app and enter the verification code below
+                      1. Scan this QR code with your authenticator app (Google Authenticator, Authy, etc.)
+                      <br />
+                      2. Enter the verification code shown in your app below
                     </p>
                     <div className="flex justify-center mb-4">
-                      {/* Mock QR code (in a real app this would be from the backend) */}
-                      <div className="h-48 w-48 bg-gray-200 dark:bg-gray-600 rounded-md flex items-center justify-center">
-                        <span className="text-gray-500 dark:text-gray-400 text-sm">
-                          QR Code Placeholder
-                        </span>
+                      {/* Real QR code instead of placeholder */}
+                      <div className="p-3 bg-white rounded-md">
+                        <QRCodeSVG 
+                          value={qrCodeValue} 
+                          size={200}
+                          level="H"
+                          includeMargin={true}
+                        />
                       </div>
                     </div>
                     <div className="space-y-4">
@@ -1049,6 +1377,19 @@ export default function Profile() {
           </div>
         </div>
       </div>
+
+      {/* Add 2FA components */}
+      {showTwoFactorSetup && (
+        <div className="mt-6">
+          <TwoFactorSetup onSetupComplete={handleTwoFactorSetupComplete} />
+        </div>
+      )}
+      
+      {showTwoFactorDisable && (
+        <div className="mt-6">
+          <TwoFactorDisable onDisableComplete={handleTwoFactorDisableComplete} />
+        </div>
+      )}
     </div>
   );
 } 
