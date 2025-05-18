@@ -12,6 +12,7 @@ A modern, full-stack personal finance management application that helps users tr
 - 📱 Modern, responsive UI with dark mode support
 - 🔒 Secure authentication and authorization
 - 🤖 AI-powered financial recommendations
+- 💬 Community forum for financial discussions
 
 ### Technical Features
 - 🚀 FastAPI backend with async support
@@ -22,6 +23,18 @@ A modern, full-stack personal finance management application that helps users tr
 - 🔐 JWT-based authentication
 - 🐳 Docker containerization
 - 📈 Database migrations with Alembic
+
+### Forum Features
+- 🗨️ Dedicated discussion areas for different financial topics
+- 📝 Rich text editing with image uploads
+- 🏷️ Post categorization with tags
+- 📌 Pinned admin announcements
+- 👍 Like/upvote system for posts and comments
+- 🧠 Threaded discussions with comment replies
+- 🔔 Notifications for replies, mentions, and likes
+- 🎭 User roles with admin moderation capabilities
+- 📊 Advanced post filtering and search
+- 🔒 Content moderation with reporting system
 
 ## Project Structure
 

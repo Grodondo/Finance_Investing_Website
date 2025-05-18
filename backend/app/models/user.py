@@ -12,10 +12,10 @@ class User(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     email = Column(String, unique=True, index=True)
-    username = Column(String, unique=True, index=True)
+    username = Column(String)
     hashed_password = Column(String)
     is_active = Column(Boolean, default=True)
-    role = Column(Enum(UserRole), default=UserRole.USER)
+    role = Column(String, default="user")
     
     # Relationships
     transactions = relationship("Transaction", back_populates="user")
@@ -24,3 +24,10 @@ class User(Base):
     holdings = relationship("Holding", back_populates="user")
     orders = relationship("Order", back_populates="user")
     watchlist = relationship("Watchlist", back_populates="user") 
+    
+    # Forum relationships
+    forum_posts = relationship("ForumPost", back_populates="user")
+    forum_comments = relationship("ForumComment", back_populates="user")
+    forum_images = relationship("ForumImage", back_populates="user")
+    forum_reports = relationship("ForumReport", foreign_keys="[ForumReport.user_id]", back_populates="user")
+    resolved_reports = relationship("ForumReport", foreign_keys="[ForumReport.resolved_by]", back_populates="resolver") 

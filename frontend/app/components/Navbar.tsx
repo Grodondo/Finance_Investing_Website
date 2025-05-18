@@ -3,6 +3,7 @@ import { useAuth } from "../contexts/AuthContext";
 import { useState, useEffect } from "react";
 import { Bars3Icon, XMarkIcon, UserCircleIcon } from "@heroicons/react/24/outline";
 import LanguageSelector from "./LanguageSelector";
+import ForumNotifications from "./ForumNotifications";
 import { useTranslation } from "react-i18next";
 
 // Helper to get the saved profile picture from localStorage
@@ -57,10 +58,10 @@ export default function Navbar() {
 
     // Check localStorage first for user name
     const savedUserData = getSavedUserData();
-    if (savedUserData?.name) {
-      setUserName(savedUserData.name);
-    } else if (user?.name) {
-      setUserName(user.name);
+    if (savedUserData?.username) {
+      setUserName(savedUserData.username);
+    } else if (user?.username) {
+      setUserName(user.username);
     }
   }, [user]);
 
@@ -151,6 +152,9 @@ export default function Navbar() {
               <Link to="/recommendations" className={navLinkClass("/recommendations")}>
                 {t('navbar.recommendations')}
               </Link>
+              <Link to="/forum" className={navLinkClass("/forum")}>
+                {t('navbar.forum', 'Forum')}
+              </Link>
               <Link to="/about" className={navLinkClass("/about")}>
                 {t('navbar.about', 'About')}
               </Link>
@@ -163,6 +167,13 @@ export default function Navbar() {
             <div className="hidden md:block">
               <LanguageSelector />
             </div>
+            
+            {/* Forum Notifications - only show when authenticated */}
+            {user && (
+              <div className="hidden md:block">
+                <ForumNotifications />
+              </div>
+            )}
             
             {/* Mobile menu button */}
             <div className="flex items-center md:hidden">
@@ -184,7 +195,7 @@ export default function Navbar() {
             {user && (
               <div className="hidden md:flex items-center space-x-4">
                 <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                  {t('common.welcome', 'Welcome')}, {userName || user.name || "User"}
+                  {t('common.welcome', 'Welcome')}, {userName || user.username || "User"}
                 </span>
                 <div className="relative">
                   <button 
@@ -196,7 +207,7 @@ export default function Navbar() {
                       {profilePicture ? (
                         <img 
                           src={profilePicture} 
-                          alt={userName || user.name || "User"} 
+                          alt={userName || user.username || "User"} 
                           className="h-full w-full object-cover"
                         />
                       ) : (
@@ -218,6 +229,29 @@ export default function Navbar() {
                         >
                           {t('navbar.profile', 'Your Profile')}
                         </Link>
+                        
+                        {/* Add Forum Admin options if user is admin */}
+                        {user?.role === 'admin' && (
+                          <>
+                            <hr className="my-1 border-gray-200 dark:border-gray-700" />
+                            <div className="px-4 py-2 text-xs font-medium text-gray-500 dark:text-gray-400">
+                              Forum Administration
+                            </div>
+                            <Link
+                              to="/forum/admin/announcements"
+                              className="block px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
+                            >
+                              Manage Announcements
+                            </Link>
+                            <Link
+                              to="/forum/admin/reports"
+                              className="block px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
+                            >
+                              Content Reports
+                            </Link>
+                          </>
+                        )}
+                        
                         <button
                           onClick={logout}
                           className="block w-full text-left px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
@@ -251,6 +285,9 @@ export default function Navbar() {
           <Link to="/recommendations" className={mobileNavLinkClass("/recommendations")}>
             {t('navbar.recommendations')}
           </Link>
+          <Link to="/forum" className={mobileNavLinkClass("/forum")}>
+            {t('navbar.forum', 'Forum')}
+          </Link>
           <Link to="/about" className={mobileNavLinkClass("/about")}>
             {t('navbar.about', 'About')}
           </Link>
@@ -271,7 +308,7 @@ export default function Navbar() {
                     {profilePicture ? (
                       <img 
                         src={profilePicture} 
-                        alt={userName || user.name || "User"} 
+                        alt={userName || user.username || "User"} 
                         className="h-full w-full object-cover"
                       />
                     ) : (
@@ -281,7 +318,7 @@ export default function Navbar() {
                 </div>
                 <div>
                   <p className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                    {userName || user.name || "User"}
+                    {userName || user.username || "User"}
                   </p>
                   <p className="text-xs text-gray-500 dark:text-gray-400">
                     {user.email}

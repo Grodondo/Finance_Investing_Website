@@ -1,6 +1,7 @@
 from sqlalchemy.orm import Session
 from ..models.user import User, UserRole
 from ..models.investing import Stock, Holding, Order, Watchlist
+from ..models.forum import ForumSection, ForumSectionType
 from ..auth.utils import get_password_hash
 from .database import Base, engine
 
@@ -45,6 +46,36 @@ def init_db():
             Stock(symbol="TSLA", name="Tesla Inc.", current_price=900.0),
         ]
         db.add_all(sample_stocks)
+    
+    # Add forum sections if none exist
+    if db.query(ForumSection).count() == 0:
+        forum_sections = [
+            ForumSection(
+                name="General Discussion",
+                description="Discuss general personal finance topics",
+                section_type=ForumSectionType.GENERAL,
+                is_restricted=False
+            ),
+            ForumSection(
+                name="Investment Tips",
+                description="Share and discuss investment strategies and tips",
+                section_type=ForumSectionType.INVESTMENT,
+                is_restricted=False
+            ),
+            ForumSection(
+                name="Budgeting Advice",
+                description="Get and give advice on budgeting and saving money",
+                section_type=ForumSectionType.BUDGETING,
+                is_restricted=False
+            ),
+            ForumSection(
+                name="Admin Announcements",
+                description="Official announcements from the administrators",
+                section_type=ForumSectionType.ANNOUNCEMENTS,
+                is_restricted=True
+            )
+        ]
+        db.add_all(forum_sections)
     
     # Commit changes
     db.commit()

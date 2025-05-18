@@ -15,6 +15,7 @@ SECRET_KEY = os.getenv("SECRET_KEY", "your-secret-key-here")  # Make sure to set
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 30
 
+# The tokenUrl should match exactly with how it's defined in your routes
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="api/auth/login")
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
@@ -41,9 +42,12 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -
 async def verify_token(token: str = Depends(oauth2_scheme)) -> dict:
     """Verify a JWT token and return its payload."""
     try:
+        print(f"In utils.py - Verifying token: {token[:10]}...")
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        print(f"In utils.py - Token verified successfully")
         return payload
-    except JWTError:
+    except JWTError as e:
+        print(f"In utils.py - JWT Error during verification: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Could not validate credentials",

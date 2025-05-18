@@ -193,7 +193,7 @@ export default function Profile() {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // State for user details
-  const [name, setName] = useState(user?.name || "");
+  const [username, setUsername] = useState(user?.username || "");
   const [email, setEmail] = useState(user?.email || "");
   const [isEditingProfile, setIsEditingProfile] = useState(false);
   const [profilePicture, setProfilePicture] = useState<string | null>(user?.profilePicture || null);
@@ -239,12 +239,12 @@ export default function Profile() {
         
         // If we have stored user data, use it
         if (storedUserData) {
-          setName(storedUserData.name || user?.name || "User");
+          setUsername(storedUserData.name || user?.username || "User");
           setEmail(storedUserData.email || user?.email || "user@example.com");
           setIs2FAEnabled(storedUserData.is2FAEnabled || false);
         } else {
           // Otherwise use data from AuthContext
-          setName(user?.name || "User");
+          setUsername(user?.username || "User");
           setEmail(user?.email || "user@example.com");
           setIs2FAEnabled(user?.is2FAEnabled || false);
         }
@@ -304,20 +304,19 @@ export default function Profile() {
   };
 
   // Save user profile changes
-  const saveProfileChanges = async () => {
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    
     try {
       setIsLoading(true);
       
-      // Mock API call - in a real app this would update the backend
-      await new Promise(resolve => setTimeout(resolve, 500));
-      
-      // Save to localStorage to persist between sessions
-      userProfileStorage.saveProfileData(name, email, is2FAEnabled);
-      
       // Update user in context
       if (updateUserProfile) {
-        updateUserProfile({ name, email });
+        await updateUserProfile({ username, email });
       }
+      
+      // Save to localStorage to persist between sessions
+      userProfileStorage.saveProfileData(username, email, is2FAEnabled);
       
       setIsEditingProfile(false);
       setMessage({
@@ -325,7 +324,7 @@ export default function Profile() {
         type: "success",
       });
     } catch (error) {
-      console.error("Error updating profile:", error);
+      console.error("Failed to update profile:", error);
       setMessage({
         text: "Failed to update profile. Please try again.",
         type: "error",
@@ -516,7 +515,7 @@ export default function Profile() {
         // Save to localStorage
         const userData = userProfileStorage.getProfileData() || { name: "", email: "" };
         userProfileStorage.saveProfileData(
-          name, 
+          username, 
           email, 
           true
         );
@@ -557,7 +556,7 @@ export default function Profile() {
       // Save to localStorage
       const userData = userProfileStorage.getProfileData() || { name: "", email: "" };
       userProfileStorage.saveProfileData(
-        name, 
+        username, 
         email, 
         false
       );
@@ -692,8 +691,8 @@ export default function Profile() {
                       <input
                         type="text"
                         id="name"
-                        value={name}
-                        onChange={(e) => setName(e.target.value)}
+                        value={username}
+                        onChange={(e) => setUsername(e.target.value)}
                         className="w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-gray-900 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
                       />
                     </div>
@@ -714,7 +713,7 @@ export default function Profile() {
                     </div>
                     <div className="flex justify-end">
                       <button
-                        onClick={saveProfileChanges}
+                        onClick={handleSubmit}
                         className="mt-2 px-4 py-2 bg-indigo-600 dark:bg-indigo-500 text-white rounded-md hover:bg-indigo-700 dark:hover:bg-indigo-400 transition-colors"
                       >
                         Save Changes
@@ -729,7 +728,7 @@ export default function Profile() {
                           Name
                         </p>
                         <p className="mt-1 text-base font-medium text-gray-900 dark:text-white">
-                          {name}
+                          {username}
                         </p>
                       </div>
                       <div>

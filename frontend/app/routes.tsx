@@ -11,6 +11,13 @@ import About from "./routes/about";
 import Recommendations from "./routes/recommendations";
 import Profile from "./routes/profile";
 import News from "./routes/news";
+import Forum from "./routes/forum";
+import ForumSection from "./routes/forum/section";
+import ForumPost from "./routes/forum/post";
+import ForumNewPost from "./routes/forum/new";
+import ForumEditPost from "./routes/forum/edit";
+import ForumAdminReports from "./routes/forum/admin/reports";
+import ForumAdminAnnouncements from "./routes/forum/admin/announcements";
 
 export const router = createBrowserRouter([
   {
@@ -56,6 +63,41 @@ export const router = createBrowserRouter([
       {
         path: "profile",
         element: <Profile />,
+        errorElement: <ErrorPage />,
+      },
+      {
+        path: "forum",
+        element: <Forum />,
+        errorElement: <ErrorPage />,
+      },
+      {
+        path: "forum/section/:sectionId",
+        element: <ForumSection />,
+        errorElement: <ErrorPage />,
+      },
+      {
+        path: "forum/post/:postId",
+        element: <ForumPost />,
+        errorElement: <ErrorPage />,
+      },
+      {
+        path: "forum/new",
+        element: <ForumNewPost />,
+        errorElement: <ErrorPage />,
+      },
+      {
+        path: "forum/edit/:postId",
+        element: <ForumEditPost />,
+        errorElement: <ErrorPage />,
+      },
+      {
+        path: "forum/admin/reports",
+        element: <ForumAdminReports />,
+        errorElement: <ErrorPage />,
+      },
+      {
+        path: "forum/admin/announcements",
+        element: <ForumAdminAnnouncements />,
         errorElement: <ErrorPage />,
       },
     ],

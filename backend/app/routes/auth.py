@@ -23,7 +23,7 @@ class LoginRequest(BaseModel):
     password: str
 
 class RegisterRequest(BaseModel):
-    name: str
+    username: str
     email: EmailStr
     password: str
 
@@ -36,7 +36,13 @@ async def register(request: RegisterRequest, db: Session = Depends(get_db)):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Email already registered")
     # Create new user
     hashed_password = get_password_hash(request.password)
-    new_user = User(email=request.email, username=request.name, hashed_password=hashed_password, role=UserRole.USER, is_active=True)
+    new_user = User(
+        email=request.email,
+        username=request.username,
+        hashed_password=hashed_password,
+        role=UserRole.USER,
+        is_active=True
+    )
     db.add(new_user)
     db.commit()
     db.refresh(new_user)

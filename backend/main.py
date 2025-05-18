@@ -38,7 +38,7 @@ app.add_middleware(
 )
 
 # OAuth2 scheme for token authentication
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="api/auth/login")
 
 # Initialize database and create default users
 @app.on_event("startup")
@@ -53,12 +53,14 @@ from app.routes.transactions import router as transactions_router
 from app.routes.insights import router as insights_router
 from app.routes.investing import router as investing_router
 from app.routes.news import router as news_router
+from app.routes.forum import router as forum_router
 
 app.include_router(auth_router, prefix="/api/auth", tags=["auth"])
 app.include_router(transactions_router, prefix="/api", tags=["transactions"])
 app.include_router(insights_router, prefix="/api", tags=["insights"])
 app.include_router(investing_router, prefix="/api", tags=["investing"])
 app.include_router(news_router, prefix="/api/news", tags=["news"])
+app.include_router(forum_router, prefix="/api", tags=["forum"])
 
 @app.get("/")
 async def root():

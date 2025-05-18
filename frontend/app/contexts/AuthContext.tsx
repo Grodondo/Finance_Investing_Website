@@ -3,9 +3,10 @@ import { createContext, useContext, useState, useEffect, ReactNode } from "react
 interface User {
   id: string;
   email: string;
-  name: string;
+  username: string;
   profilePicture?: string;
   is2FAEnabled?: boolean;
+  role?: 'user' | 'admin' | 'moderator';
 }
 
 interface AuthContextType {
@@ -109,8 +110,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const getAuthHeader = () => {
-    if (!token) return undefined;
-    return { Authorization: `Bearer ${token}` };
+    const storedToken = localStorage.getItem('token');
+    console.log('Auth token status:', { 
+      stateToken: token ? 'present' : 'missing', 
+      storedToken: storedToken ? 'present' : 'missing' 
+    });
+    
+    if (!storedToken && !token) {
+      console.warn('No authentication token available');
+      return undefined;
+    }
+    
+    const tokenToUse = storedToken || token || '';
+    console.log('Using token:', tokenToUse.substring(0, 15) + '...');
+    const authHeader = { Authorization: `Bearer ${tokenToUse}` };
+    console.log('Full auth header:', authHeader);
+    return authHeader;
   };
 
   const updateUserProfile = (userData: Partial<User>) => {
