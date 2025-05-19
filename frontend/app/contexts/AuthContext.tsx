@@ -111,10 +111,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const getAuthHeader = () => {
     const storedToken = localStorage.getItem('token');
-    console.log('Auth token status:', { 
-      stateToken: token ? 'present' : 'missing', 
-      storedToken: storedToken ? 'present' : 'missing' 
-    });
+    //console.log('Auth token status:', { 
+    //  stateToken: token ? 'present' : 'missing', 
+    //  storedToken: storedToken ? 'present' : 'missing' 
+    //});
     
     if (!storedToken && !token) {
       console.warn('No authentication token available');
@@ -122,9 +122,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
     
     const tokenToUse = storedToken || token || '';
-    console.log('Using token:', tokenToUse.substring(0, 15) + '...');
+    //console.log('Using token:', tokenToUse.substring(0, 15) + '...');
     const authHeader = { Authorization: `Bearer ${tokenToUse}` };
-    console.log('Full auth header:', authHeader);
     return authHeader;
   };
 

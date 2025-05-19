@@ -15,11 +15,7 @@ import {
 } from '@heroicons/react/24/outline';
 import PageTitle from '../../components/PageTitle';
 import Loader from '../../components/Loader';
-
-// Add TypeScript declaration for react-quill
-declare module 'react-quill';
-import ReactQuill from 'react-quill';
-import 'react-quill/dist/quill.snow.css';
+import QuillEditor from '../../components/QuillEditor';
 
 const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB
 const ALLOWED_FILE_TYPES = ['image/jpeg', 'image/png', 'image/gif'];
@@ -195,6 +191,9 @@ const ForumNewPost: React.FC = () => {
         selectedTags.forEach(tag => {
           formData.append('tag_ids', String(tag));
         });
+      } else {
+        // Ensure tag_ids is sent as empty array if no tags selected
+        formData.append('tag_ids', '');
       }
       
       // Add images if any
@@ -204,9 +203,11 @@ const ForumNewPost: React.FC = () => {
         });
       }
       
-      // Add official flag if admin and isOfficial is true
+      // Add official flag if admin and isOfficial is true (admin announcements)
       if (isAdmin && isOfficial) {
         formData.append('is_official', 'true');
+      } else {
+        formData.append('is_official', 'false');
       }
       
       // Submit the post
@@ -353,14 +354,13 @@ const ForumNewPost: React.FC = () => {
               Content
             </label>
             <div className="rich-text-editor dark:text-white">
-              <ReactQuill
-                theme="snow"
+              <QuillEditor
                 value={content}
                 onChange={setContent}
                 modules={quillModules}
                 formats={quillFormats}
                 placeholder="Write your post content here..."
-                className={`h-64 mb-12 ${isSubmitting ? 'opacity-75 pointer-events-none' : ''}`}
+                className={`mb-12 ${isSubmitting ? 'opacity-75 pointer-events-none' : ''}`}
                 readOnly={isSubmitting}
               />
             </div>

@@ -9,6 +9,7 @@
   },
   "dependencies": {
     "@tanstack/react-query": "^5.76.1",
+    "@tiptap/extension-placeholder": "^2.12.0",
     "chart.js": "^4.4.0",
     "chartjs-plugin-zoom": "^2.0.1",
     "i18next": "^25.1.3",

@@ -102,29 +102,33 @@ const Forum: React.FC = () => {
         <div className="divide-y divide-gray-200 dark:divide-gray-700">
           {sections.map((section) => (
             <div key={section.id} className="p-6 hover:bg-gray-50 dark:hover:bg-gray-700/30 transition duration-150">
-              <Link to={`/forum/section/${section.id}`} className="flex items-start space-x-5">
+              <div className="flex items-start space-x-5">
                 <div className="flex-shrink-0 mt-1">
                   {getSectionIcon(section.section_type)}
                 </div>
                 
                 <div className="min-w-0 flex-1">
-                  <div className="flex items-center justify-between">
-                    <h3 className="text-lg font-medium text-gray-900 dark:text-white">
-                      {section.name}
-                      {section.is_restricted && (
-                        <span className="ml-2 inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300">
-                          Restricted
-                        </span>
-                      )}
-                    </h3>
-                    <ChevronRightIcon className="h-5 w-5 text-gray-400" />
+                  <div className="block">
+                    <div className="flex items-center justify-between">
+                      <Link to={`/forum/section/${section.id}`} className="hover:underline">
+                        <h3 className="text-lg font-medium text-gray-900 dark:text-white">
+                          {section.name}
+                          {section.is_restricted && (
+                            <span className="ml-2 inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300">
+                              Restricted
+                            </span>
+                          )}
+                        </h3>
+                      </Link>
+                      <ChevronRightIcon className="h-5 w-5 text-gray-400" />
+                    </div>
+                    
+                    <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                      {section.description}
+                    </p>
                   </div>
                   
-                  <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-                    {section.description}
-                  </p>
-                  
-                  <div className="mt-3 flex justify-between items-center">
+                  <div className="mt-4 space-y-2">
                     <div className="flex items-center text-sm text-gray-500 dark:text-gray-400">
                       <DocumentTextIcon className="h-4 w-4 mr-1" />
                       <span>{section.post_count} posts</span>
@@ -149,7 +153,7 @@ const Forum: React.FC = () => {
                     )}
                   </div>
                 </div>
-              </Link>
+              </div>
             </div>
           ))}
           

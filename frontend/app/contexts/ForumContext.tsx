@@ -130,7 +130,6 @@ export const ForumProvider: React.FC<{children: ReactNode}> = ({ children }) => 
   const isAdmin = user?.role === 'admin';
 
   const handleApiError = (error: any) => {
-    console.error('Forum API error:', error);
     setError(error.message || 'An error occurred with the forum API');
     setLoading(false);
     throw error;
@@ -142,16 +141,12 @@ export const ForumProvider: React.FC<{children: ReactNode}> = ({ children }) => 
     setError(null);
     
     try {
-      console.log('Starting to load forum sections...');
       const headers = getAuthHeader();
-      console.log('Auth headers obtained:', headers ? 'Headers present' : 'No headers');
       
       if (!headers) {
-        console.error('Authentication headers missing when loading forum sections');
         throw new Error('Not authenticated');
       }
       
-      console.log('Fetching forum sections...');
       const response = await fetch('/api/forum/sections', {
         headers: {
           ...headers,
@@ -159,20 +154,16 @@ export const ForumProvider: React.FC<{children: ReactNode}> = ({ children }) => 
         }
       });
       
-      console.log('Forum sections API response status:', response.status);
       if (!response.ok) {
         const errorText = await response.text().catch(() => 'No error details');
-        console.error(`Forum sections API error: ${response.status}`, errorText);
         throw new Error(`Failed to load forum sections: ${response.status}`);
       }
       
       const data = await response.json();
-      console.log('Forum sections loaded successfully:', data.length);
       setSections(data);
       setLoading(false);
       return data;
     } catch (error) {
-      console.error('Error in loadSections:', error);
       return handleApiError(error);
     }
   }, [getAuthHeader]);
