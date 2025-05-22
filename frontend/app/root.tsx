@@ -33,6 +33,9 @@ export default function Root() {
 
   // Show navbar only on authenticated pages, excluding home, login, and register
   const showNavbar = isAuthenticated && !["/", "/login", "/register"].includes(location.pathname);
+  
+  // Only show theme toggle outside of the index page
+  const showThemeToggle = location.pathname !== "/";
 
   return (
     <QueryClientProvider client={queryClient}>
@@ -41,7 +44,7 @@ export default function Root() {
           <div className="min-h-screen bg-gray-50 dark:bg-dark-bg">
             {showNavbar && <Navbar />}
             <Outlet />
-            <ThemeToggle />
+            {showThemeToggle && <ThemeToggle />}
           </div>
         </ForumProvider>
       </ThemeProvider>

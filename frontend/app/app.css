@@ -16,7 +16,7 @@
   }
 
   h1, h2, h3, h4, h5, h6, p, span, div {
-    @apply text-gray-900 dark:text-dark-text;
+    /* Base text color is handled by body, but can be overridden by specific light/dark mode classes */
   }
 }
 
@@ -33,7 +33,442 @@
   .card {
     @apply bg-white dark:bg-dark-surface rounded-lg shadow-md p-6 transition-colors duration-200;
   }
+
+  /* Light Mode Specific Styles */
+  .light-mode-gradient-text {
+    @apply bg-gradient-to-r from-blue-600 to-sky-500 bg-clip-text text-transparent;
+  }
+  .light-mode-gradient-text-strong {
+    @apply bg-gradient-to-r from-blue-700 to-sky-600 bg-clip-text text-transparent;
+  }
+  .light-mode-gradient-text-footer {
+    @apply bg-gradient-to-r from-blue-600 to-sky-500 bg-clip-text text-transparent;
+  }
+  
+  /* Dark Mode Text Gradients */
+  .text-gradient-light {
+    @apply bg-gradient-to-r from-white to-gray-300 bg-clip-text text-transparent;
+  }
+  .text-gradient-footer {
+    @apply bg-gradient-to-r from-indigo-400 to-blue-400 bg-clip-text text-transparent;
+  }
+
+  .light-mode-button-primary {
+    @apply bg-gradient-to-r from-blue-600 to-sky-500 hover:from-blue-700 hover:to-sky-600 text-white;
+  }
+  .light-mode-button-primary .button-text {
+    @apply text-white;
+  }
+  .light-mode-button-primary .button-glow {
+    @apply bg-gradient-to-r from-blue-400 to-sky-300;
+  }
+
+  .light-mode-button-secondary {
+    @apply text-blue-600 border-blue-500 hover:bg-blue-50;
+  }
+  .light-mode-button-secondary .button-text {
+    @apply text-blue-600;
+  }
+  
+  .light-mode-button-secondary-cta {
+    @apply text-blue-700 border-blue-300 hover:bg-blue-100 hover:border-blue-500;
+  }
+  .light-mode-button-secondary-cta .button-text {
+    @apply text-blue-700;
+  }
+
+  .light-mode-card {
+    @apply bg-white/90 border-gray-200 shadow-lg;
+  }
+  .light-mode-card:hover {
+    @apply border-blue-300/70 bg-white;
+  }
+  .light-mode-card-featured {
+    @apply bg-white border-blue-500 shadow-xl -translate-y-4;
+  }
+  .light-mode-card-featured:hover {
+    @apply bg-white border-blue-600;
+  }
+
+  .light-mode-image-container .image-glow {
+    @apply bg-gradient-to-r from-blue-400 to-sky-400 opacity-50;
+  }
+  .light-mode-image-container .image-overlay {
+    @apply bg-gradient-to-tr from-blue-500/10 to-transparent;
+  }
+
+  .light-mode-header {
+    @apply bg-white/80 border-gray-200/80;
+  }
+  .light-mode .logo-text {
+    @apply bg-gradient-to-r from-blue-700 to-sky-600 bg-clip-text text-transparent;
+  }
+  .light-mode .welcome-text {
+    @apply text-gray-700;
+  }
+  .light-mode .nav-link {
+    @apply text-gray-700 hover:text-blue-600;
+  }
+  .light-mode .nav-link::after {
+    @apply bg-gradient-to-r from-blue-500 to-sky-500;
+  }
+  .light-mode .login-button {
+    @apply border-blue-500 text-blue-600 hover:bg-blue-50 hover:border-blue-600;
+  }
+
+  .light-mode .sign-out-button span {
+    @apply text-white;
+  }
+  .light-mode .sign-out-button::before {
+    @apply bg-gradient-to-r from-blue-600 to-sky-500;
+  }
+
 }
+
+/* Mercor-inspired styles */
+.mercor-layout {
+  @apply relative min-h-screen text-white;
+  /* Default dark mode gradient, light mode gradient handled by inline style on the background div */
+}
+
+.mercor-layout.light-mode {
+  /* Specific overall light mode container adjustments if needed, though most handled by element classes */
+}
+
+
+/* Background elements */
+.globe-background {
+  @apply fixed inset-0 overflow-hidden pointer-events-none;
+  z-index: -2;
+}
+
+.globe {
+  @apply absolute -inset-[10%] opacity-20;
+  animation: slowly-rotate 60s linear infinite;
+  transform-style: preserve-3d;
+  transition: opacity 0.5s ease, transform 0.5s ease;
+  will-change: transform, opacity;
+}
+
+.globe-circle {
+  @apply absolute rounded-full opacity-60;
+}
+
+.circle-1 {
+  width: 60%;
+  height: 60%;
+  top: 20%;
+  left: 20%;
+  background: radial-gradient(circle, rgba(79, 70, 229, 0.7), rgba(147, 51, 234, 0.1));
+  animation: pulse-size 8s ease-in-out infinite;
+}
+
+.circle-2 {
+  width: 80%;
+  height: 80%;
+  top: 10%;
+  left: 10%;
+  background: radial-gradient(circle, rgba(139, 92, 246, 0.5), rgba(6, 182, 212, 0.1));
+  animation: pulse-size 6s ease-in-out infinite reverse;
+}
+
+.circle-3 {
+  width: 100%;
+  height: 100%;
+  top: 0;
+  left: 0;
+  background: radial-gradient(circle, rgba(6, 182, 212, 0.3), rgba(79, 70, 229, 0.1));
+  animation: pulse-size 10s ease-in-out infinite;
+}
+
+.grid-lines {
+  @apply absolute inset-0;
+}
+
+.grid-line {
+  @apply absolute bg-white/10;
+  animation: fade-pulse 3s ease-in-out infinite;
+}
+
+.h-line {
+  @apply h-px w-full;
+}
+
+.v-line {
+  @apply w-px h-full;
+}
+
+.node {
+  @apply absolute w-1.5 h-1.5 rounded-full bg-white;
+  animation: node-pulse 3s ease-in-out infinite;
+  box-shadow: 0 0 8px rgba(255, 255, 255, 0.6);
+}
+
+/* Noise overlay */
+.noise-overlay {
+  @apply fixed inset-0 bg-[url('/noise.svg')] opacity-[0.03] pointer-events-none;
+  z-index: -3; /* Changed from -1 to be behind particles */
+}
+
+/* Header */
+.mercor-header {
+  @apply fixed top-0 left-0 right-0 backdrop-blur-md;
+  /* background color and border handled by inline style in _index.tsx for light/dark */
+  z-index: 50;
+}
+
+.header-content {
+  @apply max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex justify-between items-center h-16;
+}
+
+.logo-link {
+  @apply flex items-center;
+}
+
+.logo-text {
+  /* Dark mode default, light mode handled by .light-mode .logo-text */
+  @apply text-xl font-bold bg-gradient-to-r from-indigo-400 to-blue-400 bg-clip-text text-transparent;
+  animation: fade-in 0.5s ease-out;
+}
+
+.header-controls {
+  @apply flex items-center space-x-4;
+}
+
+.welcome-text {
+  /* Dark mode default, light mode handled by .light-mode .welcome-text */
+  @apply text-sm text-gray-300;
+}
+
+.sign-out-button {
+  @apply relative px-4 py-2 rounded-md overflow-hidden;
+}
+
+.sign-out-button::before {
+  /* Dark mode default, light mode handled by .light-mode .sign-out-button::before */
+  @apply absolute inset-0 bg-gradient-to-r from-indigo-500 to-blue-500 opacity-80;
+  content: '';
+  transition: opacity 0.2s ease;
+}
+
+.sign-out-button:hover::before {
+  @apply opacity-100;
+}
+
+.sign-out-button span {
+  /* Dark mode default, light mode handled by .light-mode .sign-out-button span */
+  @apply relative z-10 text-white font-medium;
+}
+
+.theme-button {
+  @apply p-2 rounded-full text-gray-300 hover:bg-gray-800;
+  transition: transform 0.2s ease;
+}
+
+.theme-button:hover {
+  transform: scale(1.1);
+}
+
+/* Main content */
+.mercor-main {
+  @apply pt-24 pb-16 relative;
+  z-index: 10;
+}
+
+.main-content {
+  @apply mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-12 lg:py-24;
+}
+
+.content-grid {
+  @apply grid grid-cols-1 lg:grid-cols-2 gap-12;
+}
+
+/* Hero section */
+.hero-section {
+  @apply flex flex-col justify-center;
+}
+
+.hero-title {
+  /* Dark mode default style in _index.tsx, light mode uses .light-mode-gradient-text-strong */
+  @apply text-4xl md:text-5xl lg:text-6xl font-bold tracking-tight;
+  opacity: 0;
+  /* transition handled by animate-fade-in class */
+}
+
+.hero-description {
+  /* Dark mode default in _index.tsx, light mode uses text-gray-600 */
+  @apply mt-6 text-lg leading-8 max-w-xl;
+  opacity: 0;
+  transform: translateY(20px);
+  /* transition handled by animate-slide-up class */
+}
+
+.cta-buttons {
+  @apply mt-10 flex items-center gap-x-6;
+}
+
+.cta-button {
+  @apply relative inline-block;
+  /* transition handled by animate-fade-in for buttons and hover effects */
+}
+
+.cta-button.primary {
+  /* Dark mode default in _index.tsx, light mode uses .light-mode-button-primary */
+  @apply px-6 py-3 overflow-hidden rounded-md;
+}
+
+.cta-button.primary::before {
+  /* Dark mode default */
+  @apply absolute inset-0 bg-gradient-to-r from-indigo-500 to-blue-500;
+  content: '';
+  z-index: -1;
+}
+
+.button-text {
+  /* Dark mode default text-white, light mode handled by specific button classes */
+  @apply relative z-10 font-semibold;
+}
+
+.button-glow {
+  /* Dark mode default */
+  @apply absolute inset-0 opacity-0 bg-gradient-to-r from-indigo-400 to-blue-300 blur-xl rounded-md;
+  transition: opacity 0.2s ease;
+}
+
+.cta-button.primary:hover {
+  transform: scale(1.05);
+}
+
+.cta-button.primary:hover .button-glow {
+  @apply opacity-60;
+}
+
+.cta-button.primary:active {
+  transform: scale(0.98);
+}
+
+.cta-button.secondary {
+  /* Dark mode default in _index.tsx, light mode uses .light-mode-button-secondary */
+  @apply text-sm font-semibold leading-6 relative;
+}
+
+.cta-button.secondary::after {
+  /* Dark mode default */
+  @apply absolute -bottom-1 left-0 w-0 h-0.5 bg-gradient-to-r from-indigo-500 to-blue-500;
+  content: '';
+  transition: width 0.3s ease;
+}
+
+.cta-button.secondary:hover::after {
+  @apply w-full;
+}
+
+.arrow {
+  @apply inline-block ml-1;
+  transition: transform 0.3s ease;
+}
+
+.cta-button.secondary:hover .arrow {
+  transform: translateX(4px);
+}
+
+/* Image section */
+.image-section {
+  @apply flex items-center justify-center;
+}
+
+.image-container {
+  @apply relative max-w-xl w-full;
+  opacity: 0;
+  animation: fade-in 0.8s ease-out 0.5s forwards;
+}
+
+.image-glow {
+  /* Dark mode default in _index.tsx, light mode .light-mode-image-container .image-glow */
+  @apply absolute -inset-1 rounded-2xl blur-xl opacity-40;
+}
+
+.dashboard-image {
+  /* Border color handled by inline style in _index.tsx for light/dark */
+  @apply relative z-10 rounded-2xl overflow-hidden shadow-2xl;
+}
+
+.dashboard-screenshot {
+  @apply w-full h-auto object-cover;
+  transform: scale(0.95);
+  animation: scale-in 0.6s ease-out forwards;
+}
+
+.image-overlay {
+  /* Dark mode default in _index.tsx, light mode .light-mode-image-container .image-overlay */
+  @apply absolute inset-0 pointer-events-none;
+}
+
+.decoration {
+  /* Dark mode default in _index.tsx, light mode uses bg-blue-500/bg-sky-400 */
+  @apply absolute rounded-full blur-xl;
+  animation: pulse-opacity 4s ease-in-out infinite;
+}
+
+.top-right {
+  @apply -top-4 -right-4 w-12 h-12 opacity-40;
+}
+
+.bottom-left {
+  @apply -bottom-6 -left-6 w-20 h-20 opacity-40;
+  animation-delay: 1s;
+}
+
+/* Animations */
+@keyframes fade-in {
+  0% { opacity: 0; transform: translateY(10px); }
+  100% { opacity: 1; transform: translateY(0);}
+}
+
+@keyframes slide-up {
+  0% { opacity: 0; transform: translateY(20px); }
+  100% { opacity: 1; transform: translateY(0);}
+}
+
+@keyframes scale-in {
+  0% { transform: scale(0.95); }
+  100% { transform: scale(1); }
+}
+
+@keyframes pulse-opacity {
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 0.7; }
+}
+
+@keyframes pulse-size {
+  0%, 100% { transform: scale(1); opacity: 0.4; }
+  50% { transform: scale(1.05); opacity: 0.6; }
+}
+
+@keyframes slowly-rotate {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+@keyframes fade-pulse {
+  0%, 100% { opacity: 0.05; }
+  50% { opacity: 0.15; }
+}
+
+@keyframes node-pulse {
+  0%, 100% { opacity: 0.4; transform: scale(1); }
+  50% { opacity: 1; transform: scale(1.5); }
+}
+
+/* Animation classes for hero section */
+.animate-fade-in {
+  animation: fade-in 0.6s ease-out forwards;
+}
+
+.animate-slide-up {
+  animation: slide-up 0.6s ease-out forwards;
+}
+
 
 /* Forum specific styles */
 .rich-text-editor.dark .ql-snow .ql-toolbar button,
@@ -165,4 +600,464 @@
 
 .heart-animate {
   animation: heart-pulse 0.5s ease-in-out;
+}
+
+/* Connection lines between nodes */
+.connections {
+  @apply absolute inset-0 w-full h-full;
+  z-index: -1;
+}
+
+.connection-line {
+  stroke: rgba(255, 255, 255, 0.15);
+  stroke-width: 0.5;
+  stroke-dasharray: 2, 8;
+  animation: line-pulse 4s ease-in-out infinite;
+  filter: drop-shadow(0 0 8px rgba(255, 255, 255, 0.1));
+}
+
+@keyframes line-pulse {
+  0%, 100% { stroke-opacity: 0.1; }
+  50% { stroke-opacity: 0.3; }
+}
+
+/* Particles */
+.particles-container {
+  @apply fixed inset-0 overflow-hidden pointer-events-none;
+  z-index: -1;
+}
+
+.particle {
+  @apply absolute w-1 h-1 rounded-full bg-white/30;
+  filter: blur(1px);
+  animation: float-around linear infinite;
+}
+
+@keyframes float-around {
+  0% {
+    transform: translateY(0) translateX(0);
+    opacity: 0;
+  }
+  25% {
+    opacity: 0.8;
+  }
+  75% {
+    opacity: 0.8;
+  }
+  100% {
+    transform: translateY(-100vh) translateX(20vw);
+    opacity: 0;
+  }
+}
+
+/* Hero container */
+.hero-container {
+  @apply relative min-h-screen flex items-center;
+}
+
+/* Nav links */
+.nav-links {
+  @apply flex items-center space-x-6;
+}
+
+.nav-link {
+  /* Dark mode default, light mode handled by .light-mode .nav-link */
+  @apply text-gray-300 hover:text-white relative px-1 py-2 transition-colors bg-transparent cursor-pointer;
+}
+
+.nav-link::after {
+  content: '';
+  /* Dark mode default, light mode handled by .light-mode .nav-link::after */
+  @apply absolute left-0 bottom-0 w-0 h-0.5 bg-gradient-to-r from-indigo-500 to-blue-500 transition-all duration-300;
+}
+
+.nav-link:hover::after {
+  @apply w-full;
+}
+
+.login-button {
+  /* Dark mode default, light mode handled by .light-mode .login-button */
+  @apply ml-4 px-4 py-2 rounded-md font-medium border transition-colors;
+}
+
+/* Shared section styles */
+.scroll-section {
+  @apply py-24 relative;
+  /* Background color handled by inline style in _index.tsx for light/dark */
+  opacity: 0;
+  transform: translateY(30px);
+  transition: opacity 0.8s ease, transform 0.8s ease;
+}
+
+.section-visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.section-content {
+  @apply max-w-7xl mx-auto px-4 sm:px-6 lg:px-8;
+}
+
+.section-header {
+  @apply text-center mb-16;
+}
+
+.section-title {
+  /* Dark mode default style in _index.tsx, light mode uses .light-mode-gradient-text */
+  @apply text-3xl md:text-4xl font-bold tracking-tight mb-4;
+}
+
+.section-subtitle {
+  /* Dark mode default in _index.tsx, light mode uses text-gray-600 */
+  @apply text-lg leading-8 max-w-2xl mx-auto;
+}
+
+/* Features section */
+.features-section {
+  /* Dark mode default in _index.tsx, light mode uses bg-white */
+  @apply backdrop-blur-sm;
+}
+
+.features-grid {
+  @apply grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8;
+}
+
+.feature-card {
+  /* Dark mode default in _index.tsx, light mode uses .light-mode-card */
+  @apply bg-gray-900/70 border border-gray-800 rounded-xl p-6 backdrop-blur-sm transition-all duration-300 hover:border-indigo-500/50 hover:bg-gray-900/90;
+  box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.3);
+}
+
+.feature-icon {
+  /* Dark mode default in _index.tsx, light mode uses specific bg-gradient */
+  @apply w-12 h-12 mb-4 rounded-lg flex items-center justify-center;
+}
+
+.feature-title {
+  /* Dark mode default in _index.tsx, light mode uses text-gray-800 */
+  @apply text-xl font-semibold mb-2;
+}
+
+.feature-description {
+  /* Dark mode default in _index.tsx, light mode uses text-gray-600 */
+  @apply text-sm leading-relaxed;
+}
+
+/* Icons for features are handled in _index.tsx */
+
+/* Testimonials section */
+.testimonials-section {
+  /* Dark mode default in _index.tsx, light mode uses bg-gray-50 */
+  @apply relative;
+}
+
+.testimonials-grid {
+  @apply grid grid-cols-1 md:grid-cols-3 gap-8;
+}
+
+.testimonial-card {
+  /* Dark mode default in _index.tsx, light mode uses .light-mode-card */
+  @apply bg-gray-900/70 border border-gray-800 rounded-xl p-6 backdrop-blur-sm transition-all duration-300 hover:border-indigo-500/50;
+  box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.3);
+}
+
+.testimonial-content {
+  @apply mb-6;
+}
+
+.testimonial-text {
+  /* Dark mode default in _index.tsx, light mode uses text-gray-700 */
+  @apply text-sm leading-relaxed italic;
+}
+
+.testimonial-author {
+  @apply flex items-center;
+}
+
+.author-avatar {
+  /* Dark mode default in _index.tsx, light mode uses specific bg-gradient */
+  @apply w-10 h-10 rounded-full mr-3;
+}
+
+.author-info {
+  @apply flex flex-col;
+}
+
+.author-name {
+  /* Dark mode default in _index.tsx, light mode uses text-gray-800 */
+  @apply font-medium;
+}
+
+.author-role {
+  /* Dark mode default in _index.tsx, light mode uses text-gray-500 */
+  @apply text-sm;
+}
+
+/* Pricing section */
+.pricing-section {
+  /* Dark mode default in _index.tsx, light mode uses bg-white */
+  @apply backdrop-blur-sm;
+}
+
+.pricing-grid {
+  @apply grid grid-cols-1 md:grid-cols-3 gap-8 relative z-10;
+}
+
+.pricing-card {
+  /* Dark mode default in _index.tsx, light mode uses .light-mode-card or .light-mode-card-featured */
+  @apply bg-gray-900/70 border border-gray-800 rounded-xl p-6 backdrop-blur-sm transition-all duration-300 hover:border-indigo-500/50 relative;
+  box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.3);
+}
+
+.pricing-card.featured {
+  /* Dark mode default, light mode uses .light-mode-card-featured */
+  @apply border-indigo-500/50 transform -translate-y-4;
+  box-shadow: 0 8px 30px -2px rgba(79, 70, 229, 0.25);
+}
+
+.pricing-badge {
+  /* Dark mode default in _index.tsx, light mode uses bg-blue-600 */
+  @apply absolute -top-3 right-6 py-1 px-3 text-xs font-semibold rounded-full;
+}
+
+.pricing-header {
+  /* Border color handled by inline style in _index.tsx for light/dark */
+  @apply text-center mb-6 pb-6 border-b;
+}
+
+.pricing-tier {
+  /* Dark mode default in _index.tsx, light mode uses text-gray-800 */
+  @apply text-xl font-semibold mb-2;
+}
+
+.pricing-price {
+  /* Dark mode default in _index.tsx, light mode uses text-gray-500 */
+}
+
+.price {
+  /* Dark mode default in _index.tsx, light mode uses text-gray-800 */
+  @apply text-2xl md:text-3xl font-bold;
+}
+
+.pricing-features {
+  @apply space-y-3 mb-8;
+}
+
+.pricing-features li {
+  /* Dark mode default in _index.tsx, light mode uses text-gray-600 */
+  @apply text-sm flex items-center;
+}
+
+.pricing-features li::before {
+  content: "✓";
+  /* Color handled by theme (e.g., text-indigo-400 dark, text-blue-500 light) */
+  @apply mr-2;
+}
+.light-mode .pricing-features li::before {
+  @apply text-blue-500;
+}
+.dark-mode .pricing-features li::before {
+  @apply text-indigo-400;
+}
+
+
+.pricing-cta {
+  @apply mt-auto;
+}
+
+.pricing-button {
+  /* Dark mode default in _index.tsx, light mode uses .light-mode-button-secondary or .light-mode-button-primary */
+  @apply block w-full py-3 rounded-md text-center font-medium border transition-all duration-300;
+}
+
+.pricing-button.featured {
+  /* Dark mode default in _index.tsx, light mode uses .light-mode-button-primary */
+  @apply bg-gradient-to-r from-indigo-500 to-blue-500 border-0 hover:opacity-90;
+}
+
+/* CTA section */
+.cta-section {
+  /* Dark mode default in _index.tsx, light mode uses bg-gray-50 */
+  @apply relative py-32;
+}
+
+.cta-container {
+  @apply max-w-4xl mx-auto text-center;
+}
+
+.cta-title {
+  /* Dark mode default style in _index.tsx, light mode uses .light-mode-gradient-text-strong */
+  @apply text-3xl md:text-4xl font-bold tracking-tight mb-6;
+}
+
+.cta-description {
+  /* Dark mode default in _index.tsx, light mode uses text-gray-600 */
+  @apply text-lg leading-8 mb-10 max-w-2xl mx-auto;
+}
+
+.cta-actions {
+  @apply flex flex-col sm:flex-row justify-center space-y-4 sm:space-y-0 sm:space-x-6;
+  position: relative;
+  z-index: 1;
+}
+
+
+.cta-button.large {
+  @apply py-4 px-8 text-base;
+}
+
+/* Footer */
+.site-footer {
+  /* Background and border color handled by inline style in _index.tsx for light/dark */
+  @apply pt-16 pb-8;
+}
+
+.footer-content {
+  @apply max-w-7xl mx-auto px-4 sm:px-6 lg:px-8;
+}
+
+.footer-grid {
+  /* Border color handled by inline style in _index.tsx for light/dark */
+  @apply grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8 pb-12 border-b;
+}
+
+.footer-column {
+  @apply flex flex-col;
+}
+
+.footer-title {
+  /* Dark mode default style in _index.tsx, light mode uses .light-mode-gradient-text-footer */
+  @apply text-xl font-bold mb-3;
+}
+
+.footer-description {
+  /* Dark mode default in _index.tsx, light mode uses text-slate-600 */
+  @apply text-sm mt-2;
+}
+
+.footer-heading {
+  /* Dark mode default in _index.tsx, light mode uses text-slate-800 */
+  @apply font-semibold mb-4;
+}
+
+.footer-links {
+  @apply space-y-3;
+}
+
+.footer-link {
+  /* Dark mode default in _index.tsx, light mode uses text-slate-600 hover:text-blue-600 */
+  @apply hover:text-white transition-colors block text-sm text-left bg-transparent p-0 cursor-pointer border-0;
+}
+
+.footer-bottom {
+  @apply flex flex-col md:flex-row justify-between items-center pt-8;
+}
+
+.copyright {
+  /* Dark mode default in _index.tsx, light mode uses text-slate-500 */
+  @apply text-sm mb-4 md:mb-0;
+}
+
+.social-links {
+  @apply flex space-x-4;
+}
+
+.social-link {
+  /* Dark mode default in _index.tsx, light mode uses text-slate-500 hover:text-blue-600 */
+  @apply hover:text-white transition-colors;
+}
+
+.social-icon {
+  @apply w-5 h-5;
+}
+
+/* 3D Planes for globe background - Deprecated / Not Used with Particle System */
+.globe-plane {
+  /* ... */
+}
+.plane-1 {
+  /* ... */
+}
+.plane-2 {
+  /* ... */
+}
+@keyframes float-plane {
+  /* ... */
+}
+
+/* Ripple animations - Deprecated / Not Used with Particle System */
+.ripples-container {
+  /* ... */
+}
+.ripple {
+  /* ... */
+}
+@keyframes ripple-effect {
+  /* ... */
+}
+
+/* Floating theme toggle button */
+.theme-toggle-button {
+  @apply fixed bottom-6 right-6 p-3 rounded-full bg-gray-900/80 text-white z-50
+  border border-gray-700 backdrop-blur-sm transition-all duration-300;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3), 0 0 0 1px rgba(255, 255, 255, 0.1);
+}
+
+.light-mode .theme-toggle-button {
+  @apply bg-white/80 text-gray-700 border-gray-300;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.1), 0 0 0 1px rgba(0,0,0,0.05);
+}
+
+.theme-toggle-button:hover {
+  @apply bg-gray-800 border-indigo-500/50;
+  transform: translateY(-2px);
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.4), 0 0 0 1px rgba(79, 70, 229, 0.2);
+}
+
+.light-mode .theme-toggle-button:hover {
+  @apply bg-gray-50 border-blue-400/50;
+  transform: translateY(-2px);
+  box-shadow: 0 6px 16px rgba(0,0,0,0.15), 0 0 0 1px rgba(59, 130, 246, 0.1);
+}
+
+.theme-toggle-button:active {
+  transform: translateY(0);
+}
+
+/* Fix for buttons that are being used as links */
+button.nav-link, button.footer-link {
+  @apply border-0 focus:outline-none;
+}
+
+/* Orbital animated orb styles removed as orb is removed */
+
+/* Ensure all buttons and links are visible and have proper hover states */
+.cta-button.secondary.large {
+  @apply relative inline-flex items-center;
+  /* Dark mode default in _index.tsx */
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  padding: 0.75rem 1.5rem;
+  border-radius: 0.375rem;
+  transition: all 0.3s ease;
+}
+
+.cta-button.secondary.large:hover {
+  /* Dark mode default */
+  @apply border-indigo-500;
+  transform: translateY(-2px);
+}
+
+.light-mode .cta-button.secondary.large {
+  /* Light mode defined by .light-mode-button-secondary-cta in @layer components */
+}
+
+/* Fix for buttons in footer */
+button.footer-link {
+  width: auto;
+  text-align: left;
+  padding: 0;
+  margin: 0;
+  font: inherit;
+  background: transparent;
 } 

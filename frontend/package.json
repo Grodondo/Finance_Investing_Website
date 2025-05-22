@@ -8,6 +8,8 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@react-three/drei": "^10.0.8",
+    "@react-three/fiber": "^9.1.2",
     "@tanstack/react-query": "^5.76.1",
     "@tiptap/extension-placeholder": "^2.12.0",
     "chart.js": "^4.4.0",
@@ -21,7 +23,8 @@
     "react-dom": "^19.1.0",
     "react-i18next": "^15.5.1",
     "react-quill": "^2.0.0",
-    "react-router-dom": "^7.0.0"
+    "react-router-dom": "^7.0.0",
+    "three": "^0.176.0"
   },
   "devDependencies": {
     "@react-router/dev": "^7.0.0",
