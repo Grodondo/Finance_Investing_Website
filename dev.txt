@@ -9,3 +9,18 @@ http://localhost:5050 -> pgAdmin
 	Username: postgres
 	Password: postgres
 
+
+
+Update main page where user enters
+Fix forum
+Fix notifs
+Add payments 
+Update dashboard
+Update About page?
+Upgrade profile section
+Think about provisioning of cloud resources for deployment 
+Make the page load faster in general
+Add languages to the entire page
+Properly test everything
+Add AI using cmp for stock data
+Use React Native for IOS and Android app

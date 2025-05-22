@@ -1,6 +1,6 @@
 import { RouterProvider } from 'react-router-dom';
 import { AuthProvider } from './contexts/AuthContext';
-import { ThemeProvider } from './contexts/ThemeContext';
+import ThemeProvider from './contexts/ThemeContext';
 import { router } from './routes.tsx';
 import './i18n/i18n'; // Import i18n configuration
 

@@ -76,6 +76,7 @@ class ForumPostBase(BaseModel):
 class ForumPostCreate(ForumPostBase):
     section_id: int
     tag_ids: Optional[List[int]] = []
+    is_official: Optional[bool] = False
 
 
 class ForumPostUpdate(BaseModel):

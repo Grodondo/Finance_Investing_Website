@@ -110,6 +110,7 @@ async def create_post(
     content: str = Form(..., description="Post content"),
     section_id: int = Form(..., description="Section ID"),
     tag_ids: Optional[List[int]] = Form(None, description="List of tag IDs"),
+    is_official: Optional[bool] = Form(False, description="Whether the post is official (admin only)"),
     files: Optional[List[UploadFile]] = File(None, description="Images to upload"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user_from_token)
@@ -119,7 +120,8 @@ async def create_post(
         title=title,
         content=content,
         section_id=section_id,
-        tag_ids=tag_ids or []
+        tag_ids=tag_ids or [],
+        is_official=is_official
     )
     return await forum_service.create_post(db, post_data, current_user, files)
 

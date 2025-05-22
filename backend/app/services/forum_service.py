@@ -1,5 +1,5 @@
 from typing import List, Optional, Dict, Any, Tuple
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import func, or_, and_
 from fastapi import HTTPException, UploadFile, Depends, status
 from datetime import datetime
@@ -91,14 +91,32 @@ def list_sections(db: Session, current_user: User) -> List[ForumSectionWithStats
             ForumPost.section_id == section.id
         ).scalar()
         
+        # Get the latest post with a simple query
         latest_post = db.query(ForumPost).filter(
             ForumPost.section_id == section.id
         ).order_by(ForumPost.created_at.desc()).first()
         
+        # Handle the latest post and user relationship
+        prepared_latest_post = None
+        if latest_post:
+            # Fetch the user separately to avoid relationship issues
+            user = db.query(User).filter(User.id == latest_post.user_id).first()
+            if user:
+                # Create a dictionary representation of the post
+                post_dict = {k: v for k, v in latest_post.__dict__.items() if not k.startswith('_')}
+                # Add user information directly to the post dictionary
+                post_dict['user'] = {
+                    "id": user.id,
+                    "username": user.username,
+                    "email": user.email,
+                    "role": user.role
+                }
+                prepared_latest_post = post_dict
+        
         result.append(ForumSectionWithStats(
             **section.__dict__,
             post_count=post_count,
-            latest_post=latest_post
+            latest_post=prepared_latest_post
         ))
     
     return result
@@ -150,7 +168,7 @@ async def create_post(
     post_data: ForumPostCreate, 
     current_user: User,
     files: Optional[List[UploadFile]] = None
-) -> ForumPost:
+) -> ForumPostDetailRead:
     """Create a new forum post with optional images"""
     # Check if section exists and if user has access
     section = db.query(ForumSection).filter(ForumSection.id == post_data.section_id).first()
@@ -170,7 +188,7 @@ async def create_post(
         content=post_data.content,
         user_id=current_user.id,
         section_id=post_data.section_id,
-        is_official=current_user.role == UserRole.ADMIN and section.section_type == "admin_announcements"
+        is_official=(current_user.role == UserRole.ADMIN and (post_data.is_official or section.section_type == "admin_announcements"))
     )
     db.add(db_post)
     db.flush()  # Flush to get the post ID
@@ -196,7 +214,10 @@ async def create_post(
     
     db.commit()
     db.refresh(db_post)
-    return db_post
+    
+    # Return the post in the proper format (ForumPostDetailRead)
+    # Use the get_post function to get all needed data
+    return get_post(db, db_post.id, current_user)
 
 
 async def update_post(
@@ -205,7 +226,7 @@ async def update_post(
     post_data: ForumPostUpdate, 
     current_user: User,
     files: Optional[List[UploadFile]] = None
-) -> ForumPost:
+) -> ForumPostDetailRead:
     """Update an existing forum post"""
     # Get post
     db_post = db.query(ForumPost).filter(ForumPost.id == post_id).first()
@@ -241,7 +262,9 @@ async def update_post(
     
     db.commit()
     db.refresh(db_post)
-    return db_post
+    
+    # Return the post in the proper format (ForumPostDetailRead)
+    return get_post(db, db_post.id, current_user)
 
 
 async def delete_post(db: Session, post_id: int, current_user: User) -> Dict[str, bool]:
@@ -304,29 +327,47 @@ def get_post(db: Session, post_id: int, current_user: User) -> ForumPostDetailRe
     # Process comments recursively (including like counts)
     processed_comments = []
     for comment in comments:
-        comment_dict = comment.__dict__.copy()
-        
-        # Count comment likes
-        comment_like_count = db.query(func.count(comment_likes.c.user_id)).filter(
-            comment_likes.c.comment_id == comment.id
-        ).scalar()
-        
-        # Check if current user liked the comment
-        comment_is_liked = db.query(comment_likes).filter(
-            comment_likes.c.comment_id == comment.id,
-            comment_likes.c.user_id == current_user.id
-        ).first() is not None
-        
-        comment_dict["like_count"] = comment_like_count
-        comment_dict["is_liked_by_user"] = comment_is_liked
-        
-        # Process replies recursively
         processed_comment = process_comment_with_replies(db, comment, current_user)
         processed_comments.append(processed_comment)
     
+    # Convert post to dict
+    post_dict = {k: v for k, v in db_post.__dict__.items() if not k.startswith('_')}
+    
+    # Convert user to dict
+    if db_post.user:
+        post_dict['user'] = {
+            'id': db_post.user.id,
+            'username': db_post.user.username,
+            'email': db_post.user.email,
+            'role': db_post.user.role
+        }
+    
+    # Convert tags to list of dicts
+    post_dict['tags'] = [
+        {
+            'id': tag.id,
+            'name': tag.name,
+            'description': tag.description
+        }
+        for tag in db_post.tags
+    ]
+    
+    # Convert images to list of dicts
+    post_dict['images'] = [
+        {
+            'id': image.id,
+            'filename': image.filename,
+            'filepath': image.filepath,
+            'file_size': image.file_size,
+            'mime_type': image.mime_type,
+            'created_at': image.created_at
+        }
+        for image in db_post.images
+    ]
+    
     # Create response with detailed post and comments
     result = ForumPostDetailRead(
-        **db_post.__dict__,
+        **post_dict,
         comments=processed_comments,
         like_count=like_count,
         is_liked_by_user=is_liked,
@@ -355,9 +396,21 @@ def process_comment_with_replies(db: Session, comment: ForumComment, current_use
         processed_reply = process_comment_with_replies(db, reply, current_user)
         processed_replies.append(processed_reply)
     
+    # Convert comment to dict
+    comment_dict = {k: v for k, v in comment.__dict__.items() if not k.startswith('_')}
+    
+    # Convert user to dict
+    if comment.user:
+        comment_dict['user'] = {
+            'id': comment.user.id,
+            'username': comment.user.username,
+            'email': comment.user.email,
+            'role': comment.user.role
+        }
+    
     # Create response
     return ForumCommentReadWithReplies(
-        **comment.__dict__,
+        **comment_dict,
         replies=processed_replies,
         like_count=comment_like_count,
         is_liked_by_user=comment_is_liked
@@ -375,7 +428,11 @@ def list_posts(
 ) -> Tuple[List[ForumPostRead], int]:
     """List forum posts with filtering and pagination"""
     # Base query
-    query = db.query(ForumPost)
+    query = db.query(ForumPost).options(
+        joinedload(ForumPost.user),
+        joinedload(ForumPost.tags),
+        joinedload(ForumPost.images)
+    )
     
     # Apply filters
     if section_id:
@@ -434,9 +491,44 @@ def list_posts(
             post_likes.c.user_id == current_user.id
         ).first() is not None
         
+        # Convert post to dict and handle relationships
+        post_dict = {k: v for k, v in post.__dict__.items() if not k.startswith('_')}
+        
+        # Convert user to dict
+        if post.user:
+            post_dict['user'] = {
+                'id': post.user.id,
+                'username': post.user.username,
+                'email': post.user.email,
+                'role': post.user.role
+            }
+        
+        # Convert tags to list of dicts
+        post_dict['tags'] = [
+            {
+                'id': tag.id,
+                'name': tag.name,
+                'description': tag.description
+            }
+            for tag in post.tags
+        ]
+        
+        # Convert images to list of dicts
+        post_dict['images'] = [
+            {
+                'id': image.id,
+                'filename': image.filename,
+                'filepath': image.filepath,
+                'file_size': image.file_size,
+                'mime_type': image.mime_type,
+                'created_at': image.created_at
+            }
+            for image in post.images
+        ]
+        
         # Create enhanced post object
         enhanced_post = ForumPostRead(
-            **post.__dict__,
+            **post_dict,
             like_count=like_count,
             comment_count=comment_count,
             is_liked_by_user=is_liked

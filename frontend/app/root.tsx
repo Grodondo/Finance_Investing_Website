@@ -2,6 +2,7 @@ import { Outlet, useNavigate, useLocation } from "react-router-dom";
 import { useEffect } from "react";
 import { useAuth } from "./contexts/AuthContext";
 import { ForumProvider } from "./contexts/ForumContext";
+import ThemeProvider from "./contexts/ThemeContext";
 import Navbar from "./components/Navbar";
 import ThemeToggle from "./components/ThemeToggle";
 import "./app.css";
@@ -35,13 +36,15 @@ export default function Root() {
 
   return (
     <QueryClientProvider client={queryClient}>
-      <ForumProvider>
-        <div className="min-h-screen bg-gray-50 dark:bg-dark-bg">
-          {showNavbar && <Navbar />}
-          <Outlet />
-          <ThemeToggle />
-        </div>
-      </ForumProvider>
+      <ThemeProvider>
+        <ForumProvider>
+          <div className="min-h-screen bg-gray-50 dark:bg-dark-bg">
+            {showNavbar && <Navbar />}
+            <Outlet />
+            <ThemeToggle />
+          </div>
+        </ForumProvider>
+      </ThemeProvider>
     </QueryClientProvider>
   );
 }
