@@ -18,6 +18,7 @@ import ForumNewPost from "./routes/forum/new";
 import ForumEditPost from "./routes/forum/edit";
 import ForumAdminReports from "./routes/forum/admin/reports";
 import ForumAdminAnnouncements from "./routes/forum/admin/announcements";
+import DemoPage from "./routes/demo";
 
 export const router = createBrowserRouter([
   {
@@ -101,5 +102,10 @@ export const router = createBrowserRouter([
         errorElement: <ErrorPage />,
       },
     ],
+  },
+  {
+    path: "/demo",
+    element: <DemoPage />,
+    errorElement: <ErrorPage />,
   },
 ]); 

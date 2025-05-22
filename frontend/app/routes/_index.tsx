@@ -3,7 +3,7 @@ import { useAuth } from "../contexts/AuthContext";
 import { useTheme } from "../contexts/ThemeContext";
 import { useEffect, useRef, useState } from "react";
 
-const PARTICLE_COUNT = 50; // Reduced count but increased size
+const PARTICLE_COUNT = 50; 
 
 interface ParticleConfig {
   id: number;
@@ -41,7 +41,6 @@ export default function Index() {
   // Initialize particles
   useEffect(() => {
     const generateParticles = () => {
-      console.log("Generating particles...");
       const newParticles: ParticleConfig[] = [];
       for (let i = 0; i < PARTICLE_COUNT; i++) {
         const particleConfig = {
@@ -57,7 +56,6 @@ export default function Index() {
         };
         newParticles.push(particleConfig);
       }
-      console.log(`Particles generated: ${newParticles.length > 0 ? JSON.stringify(newParticles[0]) : "None"}`);
       setParticleConfigs(newParticles);
     };
     
@@ -268,11 +266,11 @@ export default function Index() {
             <div className="content-grid">
               {/* Hero Content */}
               <div ref={heroRef} className="hero-section">
-                <h1 className={`hero-title ${!isDarkMode ? 'light-mode-gradient-text-strong' : 'text-gradient-light'}`}>
+                <h1 className={isDarkMode ? 'text-white hero-title' : 'light-mode-gradient-text-strong hero-title'}>
                   AI-Powered Personal Finance Manager
                 </h1>
                 
-                <p className={`hero-description ${!isDarkMode ? 'text-gray-600' : 'text-gray-300'}`}>
+                <p className={isDarkMode ? 'text-gray-300 hero-description' : 'text-gray-600 hero-description'}>
                   Take control of your finances with our intelligent platform. Get personalized insights,
                   automated categorization, and smart budgeting recommendations powered by AI.
                 </p>
@@ -285,7 +283,7 @@ export default function Index() {
                     </Link>
                   ) : (
                     <>
-                      <Link to="/signup" className={`cta-button primary ${!isDarkMode ? 'light-mode-button-primary' : ''}`}>
+                      <Link to="/register" className={`cta-button primary ${!isDarkMode ? 'light-mode-button-primary' : ''}`}>
                         <span className="button-text">Get started</span>
                         <div className="button-glow"></div>
                       </Link>
@@ -332,7 +330,7 @@ export default function Index() {
         <section className={`scroll-section features-section ${!isDarkMode ? 'bg-white' : 'bg-gray-900/50'}`} id="features">
           <div className="section-content">
             <div className="section-header">
-              <h2 className={`section-title ${!isDarkMode ? 'light-mode-gradient-text' : 'text-gradient-light'}`}>
+              <h2 className={isDarkMode ? 'text-white section-title' : 'light-mode-gradient-text section-title'}>
                 Powerful Features
               </h2>
               <p className={`section-subtitle ${!isDarkMode ? 'text-gray-600' : 'text-gray-300'}`}>
@@ -347,7 +345,7 @@ export default function Index() {
                 { title: "Smart Budgeting", description: "Create intelligent budgets that adapt to your spending habits and help you reach your financial goals.", icon: "💰" },
                 { title: "Financial Forecasting", description: "Predict your future financial situation based on current habits and plan for upcoming expenses.", icon: "📈" }
               ].map(feature => (
-                <div key={feature.title} className={`feature-card ${!isDarkMode ? 'light-mode-card' : ''}`}>
+                <div key={feature.title} className={`feature-card ${!isDarkMode ? 'light-mode-card bg-slate-50 hover:bg-white' : ''}`}>
                   <div className={`feature-icon ${!isDarkMode ? 'bg-gradient-to-br from-blue-500 to-sky-600' : 'bg-gradient-to-br from-indigo-500 to-blue-600'}`}>
                     <span className="text-white font-bold">{feature.icon}</span>
                   </div>
@@ -363,7 +361,7 @@ export default function Index() {
         <section className={`scroll-section testimonials-section ${!isDarkMode ? 'bg-gray-50' : ''}`} id="testimonials">
           <div className="section-content">
             <div className="section-header">
-              <h2 className={`section-title ${!isDarkMode ? 'light-mode-gradient-text' : 'text-gradient-light'}`}>
+              <h2 className={isDarkMode ? 'text-white section-title' : 'light-mode-gradient-text section-title'}>
                 What Our Users Say
               </h2>
               <p className={`section-subtitle ${!isDarkMode ? 'text-gray-600' : 'text-gray-300'}`}>
@@ -377,7 +375,7 @@ export default function Index() {
                 { name: "Sarah Williams", role: "Software Engineer", text: "The budgeting features are exceptional. I finally feel in control of my spending and can see a clear path to my financial goals." },
                 { name: "Michael Chen", role: "Marketing Director", text: "I've tried many finance apps before, but none of them had the intelligent insights this one provides. Absolutely worth every penny." }
               ].map(testimonial => (
-                <div key={testimonial.name} className={`testimonial-card ${!isDarkMode ? 'light-mode-card' : ''}`}>
+                <div key={testimonial.name} className={`testimonial-card ${!isDarkMode ? 'light-mode-card bg-slate-50 hover:bg-white' : ''}`}>
                   <div className="testimonial-content">
                     <p className={`testimonial-text ${!isDarkMode ? 'text-gray-700' : 'text-white'}`}>"{testimonial.text}"</p>
                   </div>
@@ -398,7 +396,7 @@ export default function Index() {
         <section className={`scroll-section pricing-section ${!isDarkMode ? 'bg-white' : 'bg-gray-900/50'}`} id="pricing">
           <div className="section-content">
             <div className="section-header">
-              <h2 className={`section-title ${!isDarkMode ? 'light-mode-gradient-text' : 'text-gradient-light'}`}>
+              <h2 className={isDarkMode ? 'text-white section-title' : 'light-mode-gradient-text section-title'}>
                 Simple, Transparent Pricing
               </h2>
               <p className={`section-subtitle ${!isDarkMode ? 'text-gray-600' : 'text-gray-300'}`}>
@@ -408,7 +406,7 @@ export default function Index() {
             
             <div className="pricing-grid">
               {/* Basic plan */}
-              <div className={`pricing-card ${!isDarkMode ? 'light-mode-card' : ''}`}>
+              <div className={`pricing-card ${!isDarkMode ? 'light-mode-card bg-slate-50 hover:bg-white' : ''}`}>
                 <div className={`pricing-header ${!isDarkMode ? 'border-gray-200' : 'border-gray-800'}`}>
                   <h3 className={`pricing-tier ${!isDarkMode ? 'text-gray-800' : 'text-white'}`}>Basic</h3>
                   <p className={`${!isDarkMode ? 'text-gray-500' : 'text-gray-300'}`}>
@@ -445,7 +443,7 @@ export default function Index() {
               </div>
               
               {/* Enterprise plan */}
-              <div className={`pricing-card ${!isDarkMode ? 'light-mode-card' : ''}`}>
+              <div className={`pricing-card ${!isDarkMode ? 'light-mode-card bg-slate-50 hover:bg-white' : ''}`}>
                 <div className={`pricing-header ${!isDarkMode ? 'border-gray-200' : 'border-gray-800'}`}>
                   <h3 className={`pricing-tier ${!isDarkMode ? 'text-gray-800' : 'text-white'}`}>Enterprise</h3>
                   <p className={`${!isDarkMode ? 'text-gray-500' : 'text-gray-300'}`}>
@@ -469,7 +467,7 @@ export default function Index() {
         <section className={`scroll-section cta-section ${!isDarkMode ? 'bg-gray-50' : ''}`} id="get-started">
           <div className="section-content">
             <div className="cta-container">
-              <h2 className={`cta-title ${!isDarkMode ? 'light-mode-gradient-text-strong' : 'text-gradient-light'}`}>
+              <h2 className={isDarkMode ? 'text-white cta-title' : 'light-mode-gradient-text-strong cta-title'}>
                 Ready to transform your financial life?
               </h2>
               <p className={`cta-description ${!isDarkMode ? 'text-gray-600' : 'text-gray-300'}`}>
@@ -496,7 +494,7 @@ export default function Index() {
         <div className="footer-content">
           <div className={`footer-grid ${!isDarkMode ? 'border-slate-300' : 'border-gray-800'}`}>
             <div className="footer-column">
-              <h3 className={`footer-title ${!isDarkMode ? 'light-mode-gradient-text-footer' : 'text-gradient-footer'}`}>
+              <h3 className={isDarkMode ? 'text-indigo-400 footer-title' : 'light-mode-gradient-text-footer footer-title'}>
                 Finance Manager
               </h3>
               <p className={`${!isDarkMode ? 'text-slate-600' : 'text-gray-400'} footer-description`}>
