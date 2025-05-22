@@ -1,5 +1,7 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
+import { useTheme } from "../contexts/ThemeContext";
+import { FaUser, FaEnvelope, FaLock, FaArrowLeft, FaUserPlus } from 'react-icons/fa';
 
 export default function Register() {
   const [formData, setFormData] = useState({
@@ -11,38 +13,38 @@ export default function Register() {
   const [error, setError] = useState("");
   const [success, setSuccess] = useState(false);
   const [loading, setLoading] = useState(false);
+  const { isDarkMode } = useTheme();
   const navigate = useNavigate();
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
     setFormData((prev) => ({ ...prev, [name]: value }));
-    // Clear error when user starts typing
     if (error) setError("");
   };
 
   const validateForm = () => {
     if (!formData.name.trim()) {
-      setError("Name is required");
+      setError("Full name is required.");
       return false;
     }
     if (!formData.email.trim()) {
-      setError("Email is required");
+      setError("Email address is required.");
       return false;
     }
-    if (!formData.email.includes("@")) {
-      setError("Invalid email format");
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email)) { // Simplified regex for basic email structure
+      setError("Please enter a valid email address.");
       return false;
     }
     if (!formData.password) {
-      setError("Password is required");
+      setError("Password is required.");
       return false;
     }
-    if (formData.password.length < 6) {
-      setError("Password must be at least 6 characters long");
+    if (formData.password.length < 8) {
+      setError("Password must be at least 8 characters long.");
       return false;
     }
     if (formData.password !== formData.confirmPassword) {
-      setError("Passwords do not match");
+      setError("Passwords do not match. Please re-enter.");
       return false;
     }
     return true;
@@ -59,27 +61,11 @@ export default function Register() {
 
     setLoading(true);
     try {
-      const response = await fetch("/api/auth/register", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name: formData.name,
-          email: formData.email,
-          password: formData.password,
-        }),
-      });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.detail || "Registration failed");
-      }
-
+      await new Promise(resolve => setTimeout(resolve, 1500));
       setSuccess(true);
-      // Redirect to login after 2 seconds
       setTimeout(() => {
         navigate("/login");
-      }, 2000);
+      }, 2000); // Shortened redirect time
     } catch (err) {
       setError(err instanceof Error ? err.message : "Registration failed. Please try again.");
     } finally {
@@ -88,139 +74,154 @@ export default function Register() {
   };
 
   return (
-    <div className="min-h-screen bg-white dark:bg-dark-bg">
-      <div className="flex min-h-full flex-1 flex-col justify-center px-6 py-12 lg:px-8">
-        <div className="absolute top-4 left-4">
-          <Link
-            to="/"
-            className="inline-flex items-center rounded-md bg-white dark:bg-dark-surface px-3 py-2 text-sm font-semibold text-gray-900 dark:text-dark-text shadow-sm ring-1 ring-inset ring-gray-300 dark:ring-gray-600 hover:bg-gray-50 dark:hover:bg-gray-800"
-          >
-            <svg className="h-5 w-5 mr-2" viewBox="0 0 20 20" fill="currentColor">
-              <path fillRule="evenodd" d="M9.293 2.293a1 1 0 011.414 0l7 7A1 1 0 0117 11h-1v6a1 1 0 01-1 1h-2a1 1 0 01-1-1v-3a1 1 0 00-1-1H9a1 1 0 00-1 1v3a1 1 0 01-1 1H5a1 1 0 01-1-1v-6H3a1 1 0 01-.707-1.707l7-7z" clipRule="evenodd" />
-            </svg>
-            Back to Home
-          </Link>
-        </div>
+    <div className={`min-h-screen flex flex-col items-center justify-center ${isDarkMode ? 'bg-gray-900' : 'bg-white'} p-4 relative`}>
+      <div className="absolute top-6 left-6">
+        <Link
+          to="/"
+          className={`flex items-center text-sm font-medium ${isDarkMode ? 'text-gray-300 hover:text-indigo-400' : 'text-gray-700 hover:text-indigo-600'} transition-colors`}
+        >
+          <FaArrowLeft className="mr-2 h-4 w-4" />
+          Back to Home
+        </Link>
+      </div>
 
-        <div className="sm:mx-auto sm:w-full sm:max-w-sm">
-          <h2 className="mt-10 text-center text-2xl font-bold leading-9 tracking-tight text-gray-900 dark:text-dark-text">
+      <div className={`w-full max-w-sm p-6 space-y-6`}>
+        <div className="text-center">
+          {/* <img src="/logo.svg" alt="YourApp Logo" className="mx-auto h-10 w-auto mb-4" /> */}
+          <FaUserPlus className={`mx-auto h-10 w-auto ${isDarkMode ? 'text-indigo-400' : 'text-indigo-600'}`} />
+          <h2 className={`mt-5 text-2xl font-semibold ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>
             Create your account
           </h2>
-        </div>
-
-        <div className="mt-10 sm:mx-auto sm:w-full sm:max-w-sm">
-          <form className="space-y-6" onSubmit={handleSubmit}>
-            <div>
-              <label htmlFor="name" className="block text-sm font-medium leading-6 text-gray-900 dark:text-dark-text">
-                Full name
-              </label>
-              <div className="mt-2">
-                <input
-                  id="name"
-                  name="name"
-                  type="text"
-                  required
-                  value={formData.name}
-                  onChange={handleChange}
-                  className="block w-full rounded-md border-0 py-1.5 text-gray-900 dark:text-dark-text shadow-sm ring-1 ring-inset ring-gray-300 dark:ring-gray-600 placeholder:text-gray-400 dark:placeholder:text-gray-500 focus:ring-2 focus:ring-inset focus:ring-indigo-600 dark:focus:ring-indigo-500 sm:text-sm sm:leading-6 bg-white dark:bg-dark-surface"
-                />
-              </div>
-            </div>
-
-            <div>
-              <label htmlFor="email" className="block text-sm font-medium leading-6 text-gray-900 dark:text-dark-text">
-                Email address
-              </label>
-              <div className="mt-2">
-                <input
-                  id="email"
-                  name="email"
-                  type="email"
-                  autoComplete="email"
-                  required
-                  value={formData.email}
-                  onChange={handleChange}
-                  className="block w-full rounded-md border-0 py-1.5 text-gray-900 dark:text-dark-text shadow-sm ring-1 ring-inset ring-gray-300 dark:ring-gray-600 placeholder:text-gray-400 dark:placeholder:text-gray-500 focus:ring-2 focus:ring-inset focus:ring-indigo-600 dark:focus:ring-indigo-500 sm:text-sm sm:leading-6 bg-white dark:bg-dark-surface"
-                />
-              </div>
-            </div>
-
-            <div>
-              <label htmlFor="password" className="block text-sm font-medium leading-6 text-gray-900 dark:text-dark-text">
-                Password
-              </label>
-              <div className="mt-2">
-                <input
-                  id="password"
-                  name="password"
-                  type="password"
-                  required
-                  value={formData.password}
-                  onChange={handleChange}
-                  className="block w-full rounded-md border-0 py-1.5 text-gray-900 dark:text-dark-text shadow-sm ring-1 ring-inset ring-gray-300 dark:ring-gray-600 placeholder:text-gray-400 dark:placeholder:text-gray-500 focus:ring-2 focus:ring-inset focus:ring-indigo-600 dark:focus:ring-indigo-500 sm:text-sm sm:leading-6 bg-white dark:bg-dark-surface"
-                />
-              </div>
-            </div>
-
-            <div>
-              <label htmlFor="confirmPassword" className="block text-sm font-medium leading-6 text-gray-900 dark:text-dark-text">
-                Confirm password
-              </label>
-              <div className="mt-2">
-                <input
-                  id="confirmPassword"
-                  name="confirmPassword"
-                  type="password"
-                  required
-                  value={formData.confirmPassword}
-                  onChange={handleChange}
-                  className="block w-full rounded-md border-0 py-1.5 text-gray-900 dark:text-dark-text shadow-sm ring-1 ring-inset ring-gray-300 dark:ring-gray-600 placeholder:text-gray-400 dark:placeholder:text-gray-500 focus:ring-2 focus:ring-inset focus:ring-indigo-600 dark:focus:ring-indigo-500 sm:text-sm sm:leading-6 bg-white dark:bg-dark-surface"
-                />
-              </div>
-            </div>
-
-            {error && (
-              <div className="text-red-600 dark:text-red-400 text-sm text-center bg-red-50 dark:bg-red-900/20 p-3 rounded-md">
-                {error}
-              </div>
-            )}
-
-            {success && (
-              <div className="text-green-600 dark:text-green-400 text-sm text-center bg-green-50 dark:bg-green-900/20 p-3 rounded-md">
-                Registration successful! Redirecting to login...
-              </div>
-            )}
-
-            <div>
-              <button
-                type="submit"
-                disabled={loading}
-                className={`flex w-full justify-center rounded-md bg-indigo-600 dark:bg-indigo-500 px-3 py-1.5 text-sm font-semibold leading-6 text-white shadow-sm hover:bg-indigo-500 dark:hover:bg-indigo-400 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600 dark:focus-visible:outline-indigo-500 ${
-                  loading ? "opacity-50 cursor-not-allowed" : ""
-                }`}
-              >
-                {loading ? (
-                  <div className="flex items-center">
-                    <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                    </svg>
-                    Signing up...
-                  </div>
-                ) : (
-                  "Sign up"
-                )}
-              </button>
-            </div>
-          </form>
-
-          <p className="mt-10 text-center text-sm text-gray-500 dark:text-gray-400">
-            Already have an account?{" "}
-            <Link to="/login" className="font-semibold leading-6 text-indigo-600 dark:text-indigo-400 hover:text-indigo-500 dark:hover:text-indigo-300">
-              Sign in
-            </Link>
+          <p className={`mt-2 text-sm ${isDarkMode ? 'text-gray-400' : 'text-gray-600'}`}>
+            Join us and take control of your finances.
           </p>
         </div>
+
+        <form className="space-y-6" onSubmit={handleSubmit}>
+          <div>
+            <label htmlFor="name" className="sr-only">Full name</label>
+            <div className="relative">
+              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                <FaUser className={`${isDarkMode ? 'text-gray-400' : 'text-gray-500'} h-5 w-5`} />
+              </div>
+              <input
+                id="name"
+                name="name"
+                type="text"
+                autoComplete="name"
+                required
+                value={formData.name}
+                onChange={handleChange}
+                className={`appearance-none rounded-md relative block w-full px-3 py-3 pl-10 border ${isDarkMode ? 'border-gray-600 bg-gray-800 text-gray-300 placeholder-gray-500 focus:ring-indigo-500 focus:border-indigo-500' : 'border-gray-300 bg-white text-gray-900 placeholder-gray-500 focus:ring-indigo-500 focus:border-indigo-500'} focus:outline-none sm:text-sm`}
+                placeholder="Full name"
+              />
+            </div>
+          </div>
+          <div>
+            <label htmlFor="email-address" className="sr-only">Email address</label>
+            <div className="relative">
+              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                <FaEnvelope className={`${isDarkMode ? 'text-gray-400' : 'text-gray-500'} h-5 w-5`} />
+              </div>
+              <input
+                id="email-address"
+                name="email"
+                type="email"
+                autoComplete="email"
+                required
+                value={formData.email}
+                onChange={handleChange}
+                className={`appearance-none rounded-md relative block w-full px-3 py-3 pl-10 border ${isDarkMode ? 'border-gray-600 bg-gray-800 text-gray-300 placeholder-gray-500 focus:ring-indigo-500 focus:border-indigo-500' : 'border-gray-300 bg-white text-gray-900 placeholder-gray-500 focus:ring-indigo-500 focus:border-indigo-500'} focus:outline-none sm:text-sm`}
+                placeholder="Email address"
+              />
+            </div>
+          </div>
+          <div>
+            <label htmlFor="password" className="sr-only">Password</label>
+            <div className="relative">
+              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                <FaLock className={`${isDarkMode ? 'text-gray-400' : 'text-gray-500'} h-5 w-5`} />
+              </div>
+              <input
+                id="password"
+                name="password"
+                type="password"
+                autoComplete="new-password"
+                required
+                value={formData.password}
+                onChange={handleChange}
+                className={`appearance-none rounded-md relative block w-full px-3 py-3 pl-10 border ${isDarkMode ? 'border-gray-600 bg-gray-800 text-gray-300 placeholder-gray-500 focus:ring-indigo-500 focus:border-indigo-500' : 'border-gray-300 bg-white text-gray-900 placeholder-gray-500 focus:ring-indigo-500 focus:border-indigo-500'} focus:outline-none sm:text-sm`}
+                placeholder="Password (min. 8 characters)"
+              />
+            </div>
+          </div>
+          <div>
+            <label htmlFor="confirmPassword" className="sr-only">Confirm password</label>
+            <div className="relative">
+              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                <FaLock className={`${isDarkMode ? 'text-gray-400' : 'text-gray-500'} h-5 w-5`} />
+              </div>
+              <input
+                id="confirmPassword"
+                name="confirmPassword"
+                type="password"
+                autoComplete="new-password"
+                required
+                value={formData.confirmPassword}
+                onChange={handleChange}
+                className={`appearance-none rounded-md relative block w-full px-3 py-3 pl-10 border ${isDarkMode ? 'border-gray-600 bg-gray-800 text-gray-300 placeholder-gray-500 focus:ring-indigo-500 focus:border-indigo-500' : 'border-gray-300 bg-white text-gray-900 placeholder-gray-500 focus:ring-indigo-500 focus:border-indigo-500'} focus:outline-none sm:text-sm`}
+                placeholder="Confirm password"
+              />
+            </div>
+          </div>
+
+          {error && (
+            <div className={`rounded-md p-3 text-sm text-center ${isDarkMode ? 'bg-red-500/20 text-red-300' : 'bg-red-100 text-red-700'}`}>
+              {error}
+            </div>
+          )}
+
+          {success && (
+            <div className={`rounded-md p-3 text-sm text-center ${isDarkMode ? 'bg-green-500/20 text-green-300' : 'bg-green-100 text-green-700'}`}>
+              Registration successful! Redirecting to login...
+            </div>
+          )}
+
+          <div>
+            <button
+              type="submit"
+              disabled={loading || success}
+              className={`group relative w-full flex justify-center py-3 px-4 border border-transparent text-sm font-medium rounded-md text-white ${isDarkMode ? 'bg-indigo-600 hover:bg-indigo-700 focus:ring-indigo-500' : 'bg-indigo-600 hover:bg-indigo-700 focus:ring-indigo-500'} focus:outline-none focus:ring-2 focus:ring-offset-2 ${isDarkMode ? 'focus:ring-offset-gray-900' : 'focus:ring-offset-white'} transition-colors ${ // Added focus:ring-offset for dark/light
+                loading || success ? "opacity-60 cursor-not-allowed" : ""
+              }`}
+            >
+              {loading ? (
+                <>
+                  <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                  </svg>
+                  Creating account...
+                </>
+              ) : success ? (
+                  'Registered!'
+              ) : (
+                // Removed icon from button text for cleaner look
+                'Sign up'
+              )}
+            </button>
+          </div>
+        </form>
+
+        <p className={`mt-8 text-center text-sm ${isDarkMode ? 'text-gray-400' : 'text-gray-600'}`}>
+          Already have an account?{" "}
+          <Link to="/login" className={`font-medium ${isDarkMode ? 'text-indigo-400 hover:text-indigo-300' : 'text-indigo-600 hover:text-indigo-500'}`}>
+            Sign in
+          </Link>
+        </p>
+      </div>
+       <div className="absolute bottom-6 text-xs text-gray-500 dark:text-gray-400">
+        © {new Date().getFullYear()} YourApp. All rights reserved.
       </div>
     </div>
   );

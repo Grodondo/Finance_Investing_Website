@@ -1,12 +1,15 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
+import { useTheme } from "../contexts/ThemeContext";
+import { FaEnvelope, FaLock, FaSignInAlt, FaArrowLeft } from 'react-icons/fa';
 
 export default function Login() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const { login } = useAuth();
+  const { isDarkMode } = useTheme();
   const navigate = useNavigate();
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -17,97 +20,106 @@ export default function Login() {
       await login(email, password);
       navigate("/dashboard");
     } catch (err) {
-      setError("Invalid email or password");
+      setError("Invalid email or password. Please try again.");
     }
   };
 
   return (
-    <div className="min-h-screen bg-white dark:bg-dark-bg">
-      <div className="flex min-h-full flex-1 flex-col justify-center px-6 py-12 lg:px-8">
-        <div className="absolute top-4 left-4">
-          <Link
-            to="/"
-            className="inline-flex items-center rounded-md bg-white dark:bg-dark-surface px-3 py-2 text-sm font-semibold text-gray-900 dark:text-dark-text shadow-sm ring-1 ring-inset ring-gray-300 dark:ring-gray-600 hover:bg-gray-50 dark:hover:bg-gray-800"
-          >
-            <svg className="h-5 w-5 mr-2" viewBox="0 0 20 20" fill="currentColor">
-              <path fillRule="evenodd" d="M9.293 2.293a1 1 0 011.414 0l7 7A1 1 0 0117 11h-1v6a1 1 0 01-1 1h-2a1 1 0 01-1-1v-3a1 1 0 00-1-1H9a1 1 0 00-1 1v3a1 1 0 01-1 1H5a1 1 0 01-1-1v-6H3a1 1 0 01-.707-1.707l7-7z" clipRule="evenodd" />
-            </svg>
-            Back to Home
-          </Link>
-        </div>
+    <div className={`min-h-screen flex flex-col items-center justify-center ${isDarkMode ? 'bg-gray-900' : 'bg-white'} p-4 relative`}>
+      <div className="absolute top-6 left-6">
+        <Link
+          to="/"
+          className={`flex items-center text-sm font-medium ${isDarkMode ? 'text-gray-300 hover:text-indigo-400' : 'text-gray-700 hover:text-indigo-600'} transition-colors`}
+        >
+          <FaArrowLeft className="mr-2 h-4 w-4" />
+          Back to Home
+        </Link>
+      </div>
 
-        <div className="sm:mx-auto sm:w-full sm:max-w-sm">
-          <h2 className="mt-10 text-center text-2xl font-bold leading-9 tracking-tight text-gray-900 dark:text-dark-text">
-            Sign in to your account
+      <div className="w-full max-w-sm p-6 space-y-6">
+        <div className="text-center">
+          <FaSignInAlt className={`mx-auto h-10 w-auto ${isDarkMode ? 'text-indigo-400' : 'text-indigo-600'}`} />
+          <h2 className={`mt-5 text-2xl font-semibold ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>
+            Sign in to YourApp
           </h2>
-        </div>
-
-        <div className="mt-10 sm:mx-auto sm:w-full sm:max-w-sm">
-          <form className="space-y-6" onSubmit={handleSubmit}>
-            <div>
-              <label htmlFor="email" className="block text-sm font-medium leading-6 text-gray-900 dark:text-dark-text">
-                Email address
-              </label>
-              <div className="mt-2">
-                <input
-                  id="email"
-                  name="email"
-                  type="email"
-                  autoComplete="email"
-                  required
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  className="block w-full rounded-md border-0 px-4 py-2.5 text-gray-900 dark:text-dark-text shadow-sm ring-1 ring-inset ring-gray-300 dark:ring-gray-600 placeholder:text-gray-400 dark:placeholder:text-gray-500 focus:ring-2 focus:ring-inset focus:ring-indigo-600 dark:focus:ring-indigo-500 sm:text-sm sm:leading-6 bg-white dark:bg-dark-surface"
-                />
-              </div>
-            </div>
-
-            <div>
-              <div className="flex items-center justify-between">
-                <label htmlFor="password" className="block text-sm font-medium leading-6 text-gray-900 dark:text-dark-text">
-                  Password
-                </label>
-                <div className="text-sm">
-                  <Link to="/forgot-password" className="font-semibold text-indigo-600 dark:text-indigo-400 hover:text-indigo-500 dark:hover:text-indigo-300">
-                    Forgot password?
-                  </Link>
-                </div>
-              </div>
-              <div className="mt-2">
-                <input
-                  id="password"
-                  name="password"
-                  type="password"
-                  autoComplete="current-password"
-                  required
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  className="block w-full rounded-md border-0 px-4 py-2.5 text-gray-900 dark:text-dark-text shadow-sm ring-1 ring-inset ring-gray-300 dark:ring-gray-600 placeholder:text-gray-400 dark:placeholder:text-gray-500 focus:ring-2 focus:ring-inset focus:ring-indigo-600 dark:focus:ring-indigo-500 sm:text-sm sm:leading-6 bg-white dark:bg-dark-surface"
-                />
-              </div>
-            </div>
-
-            {error && (
-              <div className="text-red-600 dark:text-red-400 text-sm text-center">{error}</div>
-            )}
-
-            <div>
-              <button
-                type="submit"
-                className="flex w-full justify-center rounded-md bg-indigo-600 dark:bg-indigo-500 px-3 py-1.5 text-sm font-semibold leading-6 text-white shadow-sm hover:bg-indigo-500 dark:hover:bg-indigo-400 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600 dark:focus-visible:outline-indigo-500"
-              >
-                Sign in
-              </button>
-            </div>
-          </form>
-
-          <p className="mt-10 text-center text-sm text-gray-500 dark:text-gray-400">
-            Not a member?{" "}
-            <Link to="/register" className="font-semibold leading-6 text-indigo-600 dark:text-indigo-400 hover:text-indigo-500 dark:hover:text-indigo-300">
-              Start a 14 day free trial
-            </Link>
+          <p className={`mt-2 text-sm ${isDarkMode ? 'text-gray-400' : 'text-gray-600'}`}>
+            Welcome back! Please enter your details.
           </p>
         </div>
+
+        <form className="space-y-6" onSubmit={handleSubmit}>
+          <div>
+            <label htmlFor="email-address" className="sr-only">Email address</label>
+            <div className="relative">
+              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                <FaEnvelope className={`${isDarkMode ? 'text-gray-400' : 'text-gray-500'} h-5 w-5`} />
+              </div>
+              <input
+                id="email-address"
+                name="email"
+                type="email"
+                autoComplete="email"
+                required
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                className={`appearance-none rounded-md relative block w-full px-3 py-3 pl-10 border ${isDarkMode ? 'border-gray-600 bg-gray-800 text-gray-300 placeholder-gray-500 focus:ring-indigo-500 focus:border-indigo-500' : 'border-gray-300 bg-white text-gray-900 placeholder-gray-500 focus:ring-indigo-500 focus:border-indigo-500'} focus:outline-none sm:text-sm`}
+                placeholder="Email address"
+              />
+            </div>
+          </div>
+          <div>
+            <label htmlFor="password" className="sr-only">Password</label>
+            <div className="relative">
+              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                <FaLock className={`${isDarkMode ? 'text-gray-400' : 'text-gray-500'} h-5 w-5`} />
+              </div>
+              <input
+                id="password"
+                name="password"
+                type="password"
+                autoComplete="current-password"
+                required
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                className={`appearance-none rounded-md relative block w-full px-3 py-3 pl-10 border ${isDarkMode ? 'border-gray-600 bg-gray-800 text-gray-300 placeholder-gray-500 focus:ring-indigo-500 focus:border-indigo-500' : 'border-gray-300 bg-white text-gray-900 placeholder-gray-500 focus:ring-indigo-500 focus:border-indigo-500'} focus:outline-none sm:text-sm`}
+                placeholder="Password"
+              />
+            </div>
+          </div>
+
+          <div className="flex items-center justify-end">
+            <div className="text-sm">
+              <Link to="/forgot-password" className={`font-medium ${isDarkMode ? 'text-indigo-400 hover:text-indigo-300' : 'text-indigo-600 hover:text-indigo-500'}`}>
+                Forgot your password?
+              </Link>
+            </div>
+          </div>
+
+          {error && (
+            <div className={`rounded-md p-3 text-sm text-center ${isDarkMode ? 'bg-red-500/20 text-red-300' : 'bg-red-100 text-red-700'}`}>
+              {error}
+            </div>
+          )}
+
+          <div>
+            <button
+              type="submit"
+              className={`group relative w-full flex justify-center py-3 px-4 border border-transparent text-sm font-medium rounded-md text-white ${isDarkMode ? 'bg-indigo-600 hover:bg-indigo-700 focus:ring-indigo-500' : 'bg-indigo-600 hover:bg-indigo-700 focus:ring-indigo-500'} focus:outline-none focus:ring-2 focus:ring-offset-2 ${isDarkMode ? 'focus:ring-offset-gray-900' : 'focus:ring-offset-white'} transition-colors`}
+            >
+              Sign in
+            </button>
+          </div>
+        </form>
+
+        <p className={`mt-8 text-center text-sm ${isDarkMode ? 'text-gray-400' : 'text-gray-600'}`}>
+          Don't have an account yet?{" "}
+          <Link to="/register" className={`font-medium ${isDarkMode ? 'text-indigo-400 hover:text-indigo-300' : 'text-indigo-600 hover:text-indigo-500'}`}>
+            Sign up
+          </Link>
+        </p>
+      </div>
+      <div className="absolute bottom-6 text-xs text-gray-500 dark:text-gray-400">
+        © {new Date().getFullYear()} YourApp. All rights reserved.
       </div>
     </div>
   );
