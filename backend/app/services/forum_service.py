@@ -11,11 +11,13 @@ from ..models.forum import (
 from ..models.user import User, UserRole
 from ..schemas.forum import (
     ForumSectionCreate, ForumSectionUpdate, ForumSectionWithStats,
+    ForumSectionRead,
     ForumTagCreate, ForumTagRead,
     ForumPostCreate, ForumPostUpdate, ForumPostRead, ForumPostDetailRead,
     ForumCommentCreate, ForumCommentUpdate, ForumCommentRead, ForumCommentReadWithReplies,
-    ForumReportCreate, ForumReportUpdate, ForumReportRead
+    ForumReportCreate, ForumReportUpdate, ForumReportRead, ForumImageRead
 )
+from ..schemas.user import UserBase
 from . import image_service
 
 
@@ -91,30 +93,56 @@ def list_sections(db: Session, current_user: User) -> List[ForumSectionWithStats
             ForumPost.section_id == section.id
         ).scalar()
         
-        # Get the latest post with a simple query
-        latest_post = db.query(ForumPost).filter(
+        # Get the latest post with its user eagerly loaded
+        latest_post_db = db.query(ForumPost).options(joinedload(ForumPost.user)).filter(
             ForumPost.section_id == section.id
         ).order_by(ForumPost.created_at.desc()).first()
         
-        # Handle the latest post and user relationship
         prepared_latest_post = None
-        if latest_post:
-            # Fetch the user separately to avoid relationship issues
-            user = db.query(User).filter(User.id == latest_post.user_id).first()
-            if user:
-                # Create a dictionary representation of the post
-                post_dict = {k: v for k, v in latest_post.__dict__.items() if not k.startswith('_')}
-                # Add user information directly to the post dictionary
-                post_dict['user'] = {
-                    "id": user.id,
-                    "username": user.username,
-                    "email": user.email,
-                    "role": user.role
-                }
-                prepared_latest_post = post_dict
+        if latest_post_db:
+            # Map the ORM model to the Pydantic model
+            # Ensure all required fields for ForumPostRead are present
+            # and correctly mapped from latest_post_db and latest_post_db.user
+            
+            # Get like count and if liked by current user
+            like_count = db.query(func.count(post_likes.c.post_id)).filter(post_likes.c.post_id == latest_post_db.id).scalar()
+            is_liked_by_user = False
+            if current_user:
+                is_liked_by_user = db.query(post_likes).filter(
+                    post_likes.c.post_id == latest_post_db.id,
+                    post_likes.c.user_id == current_user.id
+                ).first() is not None
+
+            # Get comment count
+            comment_count = db.query(func.count(ForumComment.id)).filter(ForumComment.post_id == latest_post_db.id).scalar()
+
+
+            prepared_latest_post = ForumPostRead(
+                id=latest_post_db.id,
+                title=latest_post_db.title,
+                content=latest_post_db.content, # content might be long, consider omitting if not needed for summary
+                user_id=latest_post_db.user_id,
+                section_id=latest_post_db.section_id,
+                is_pinned=latest_post_db.is_pinned,
+                is_official=latest_post_db.is_official,
+                created_at=latest_post_db.created_at,
+                updated_at=latest_post_db.updated_at,
+                user=UserBase(
+                    id=latest_post_db.user.id,
+                    username=latest_post_db.user.username,
+                    email=latest_post_db.user.email,
+                    role=latest_post_db.user.role,
+                    profile_picture_url=latest_post_db.user.profile_picture_url
+                ),
+                tags=[], # Tags are not loaded here for brevity, can be added if needed
+                images=[], # Images are not loaded here for brevity
+                comment_count=comment_count, # Placeholder, calculate if needed
+                like_count=like_count, # Placeholder, calculate if needed
+                is_liked_by_user=is_liked_by_user # Placeholder, calculate if needed
+            )
         
         result.append(ForumSectionWithStats(
-            **section.__dict__,
+            **section.__dict__, # Use __dict__ for ORM model to Pydantic conversion
             post_count=post_count,
             latest_post=prepared_latest_post
         ))
@@ -330,48 +358,29 @@ def get_post(db: Session, post_id: int, current_user: User) -> ForumPostDetailRe
         processed_comment = process_comment_with_replies(db, comment, current_user)
         processed_comments.append(processed_comment)
     
-    # Convert post to dict
-    post_dict = {k: v for k, v in db_post.__dict__.items() if not k.startswith('_')}
+    # Convert post to dict, excluding SQLAlchemy internal attributes and relationships handled separately
+    post_dict = {
+        k: v for k, v in db_post.__dict__.items() 
+        if not k.startswith('_') and k not in ['section', 'user', 'tags', 'images', 'comments', 'likes', 'reports']
+    }
     
-    # Convert user to dict
-    if db_post.user:
-        post_dict['user'] = {
-            'id': db_post.user.id,
-            'username': db_post.user.username,
-            'email': db_post.user.email,
-            'role': db_post.user.role
-        }
+    # Prepare user data
+    user_data = UserBase.from_orm(db_post.user) if db_post.user else None
     
-    # Convert tags to list of dicts
-    post_dict['tags'] = [
-        {
-            'id': tag.id,
-            'name': tag.name,
-            'description': tag.description
-        }
-        for tag in db_post.tags
-    ]
-    
-    # Convert images to list of dicts
-    post_dict['images'] = [
-        {
-            'id': image.id,
-            'filename': image.filename,
-            'filepath': image.filepath,
-            'file_size': image.file_size,
-            'mime_type': image.mime_type,
-            'created_at': image.created_at
-        }
-        for image in db_post.images
-    ]
-    
+    # Explicitly create ForumSectionRead from db_post.section
+    section_read = ForumSectionRead.from_orm(db_post.section)
+
     # Create response with detailed post and comments
     result = ForumPostDetailRead(
         **post_dict,
+        user=user_data,
+        tags=[ForumTagRead.from_orm(tag) for tag in db_post.tags],
+        images=[ForumImageRead.from_orm(image) for image in db_post.images],
         comments=processed_comments,
         like_count=like_count,
         is_liked_by_user=is_liked,
-        comment_count=comment_count
+        comment_count=comment_count,
+        section=section_read
     )
     
     return result
@@ -396,8 +405,8 @@ def process_comment_with_replies(db: Session, comment: ForumComment, current_use
         processed_reply = process_comment_with_replies(db, reply, current_user)
         processed_replies.append(processed_reply)
     
-    # Convert comment to dict
-    comment_dict = {k: v for k, v in comment.__dict__.items() if not k.startswith('_')}
+    # Convert comment to dict, excluding internal SQLAlchemy attributes and 'replies'
+    comment_dict = {k: v for k, v in comment.__dict__.items() if not k.startswith('_') and k != 'replies'}
     
     # Convert user to dict
     if comment.user:

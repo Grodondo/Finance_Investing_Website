@@ -1,12 +1,12 @@
-from typing import List, Optional, Any
-from pydantic import BaseModel, Field, validator
+from typing import List, Optional, Any, Literal, Union
+from pydantic import BaseModel, Field, validator, constr, conint, EmailStr, HttpUrl
 from datetime import datetime
 from .user import UserBase
 from ..models.forum import ForumSectionType, ForumReportReason
 
 # Base schemas
 class ForumTagBase(BaseModel):
-    name: str
+    name: constr(min_length=1, max_length=50)
 
 
 class ForumTagCreate(ForumTagBase):
@@ -14,7 +14,7 @@ class ForumTagCreate(ForumTagBase):
 
 
 class ForumTagUpdate(ForumTagBase):
-    pass
+    name: Optional[constr(min_length=1, max_length=50)] = None
 
 
 class ForumTagRead(ForumTagBase):
@@ -28,7 +28,7 @@ class ForumTagRead(ForumTagBase):
 class ForumSectionBase(BaseModel):
     name: str
     description: Optional[str] = None
-    section_type: ForumSectionType
+    section_type: Literal['general_discussion', 'investment_tips', 'budgeting_advice', 'admin_announcements']
     is_restricted: bool = False
 
 
@@ -37,7 +37,10 @@ class ForumSectionCreate(ForumSectionBase):
 
 
 class ForumSectionUpdate(ForumSectionBase):
-    pass
+    name: Optional[str] = None
+    description: Optional[str] = None
+    section_type: Optional[Literal['general_discussion', 'investment_tips', 'budgeting_advice', 'admin_announcements']] = None
+    is_restricted: Optional[bool] = None
 
 
 class ForumSectionRead(ForumSectionBase):
@@ -69,8 +72,10 @@ class ForumImageRead(ForumImageBase):
 
 
 class ForumPostBase(BaseModel):
-    title: str
+    title: constr(min_length=1, max_length=255)
     content: str
+    is_pinned: bool = False
+    is_locked: bool = False
 
 
 class ForumPostCreate(ForumPostBase):
@@ -80,9 +85,12 @@ class ForumPostCreate(ForumPostBase):
 
 
 class ForumPostUpdate(BaseModel):
-    title: Optional[str] = None
+    title: Optional[constr(min_length=1, max_length=255)] = None
     content: Optional[str] = None
+    section_id: Optional[int] = None
     tag_ids: Optional[List[int]] = None
+    is_pinned: Optional[bool] = None
+    is_locked: Optional[bool] = None
 
 
 class ForumCommentBase(BaseModel):

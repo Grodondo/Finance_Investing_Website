@@ -27,10 +27,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // Check for existing session
     const checkAuth = async () => {
       try {
         const storedToken = localStorage.getItem('token');
+
         if (storedToken) {
           setToken(storedToken);
           const response = await fetch("/api/auth/me", {
@@ -42,14 +42,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             const userData = await response.json();
             setUser(userData);
           } else {
-            // Token is invalid or expired
+            console.warn('[AuthContext] checkAuth: /api/auth/me response NOT OK. Status:', response.status, 'Clearing local session.');
             localStorage.removeItem('token');
             setToken(null);
             setUser(null);
           }
+        } else {
+          setUser(null);
+          setToken(null);
         }
       } catch (error) {
-        console.error("Auth check failed:", error);
+        console.error("[AuthContext] checkAuth: Error during fetch to /api/auth/me or JSON parsing:", error);
         localStorage.removeItem('token');
         setToken(null);
         setUser(null);
@@ -70,7 +73,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       });
 
       if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
+        const errorData = await response.json().catch(() => ({ detail: "Failed to parse error JSON" }));
+        console.warn('[AuthContext] login: /api/auth/login response NOT OK. Error data:', errorData);
         throw new Error(errorData.detail || "Login failed");
       }
 
@@ -78,16 +82,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const { access_token, user: userData } = data;
       
       if (!access_token) {
+        console.warn('[AuthContext] login: No access_token in response data.');
         throw new Error("No access token received");
       }
       
-      // Store token in localStorage
       localStorage.setItem('token', access_token);
       setToken(access_token);
       setUser(userData);
     } catch (error) {
-      console.error("Login error:", error);
-      throw error;
+      console.error("[AuthContext] login: Error caught in login function:", error);
+      return Promise.reject(error);
     }
   };
 
@@ -111,10 +115,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const getAuthHeader = () => {
     const storedToken = localStorage.getItem('token');
-    //console.log('Auth token status:', { 
-    //  stateToken: token ? 'present' : 'missing', 
-    //  storedToken: storedToken ? 'present' : 'missing' 
-    //});
     
     if (!storedToken && !token) {
       console.warn('No authentication token available');
@@ -122,7 +122,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
     
     const tokenToUse = storedToken || token || '';
-    //console.log('Using token:', tokenToUse.substring(0, 15) + '...');
     const authHeader = { Authorization: `Bearer ${tokenToUse}` };
     return authHeader;
   };

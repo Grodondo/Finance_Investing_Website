@@ -16,12 +16,16 @@ export default function Root() {
   const location = useLocation();
 
   useEffect(() => {
-    // Only redirect if authentication check is complete and user is not authenticated
-    // AND trying to access a protected route
-    if (!loading && !isAuthenticated) {
-      const publicPaths = ["/login", "/register", "/about", "/"];
-      if (!publicPaths.includes(location.pathname)) {
-        navigate("/login", { replace: true });
+    if (!loading) {
+      if (isAuthenticated && location.pathname === "/login") {
+        // If authenticated and on login page, redirect to dashboard
+        navigate("/dashboard", { replace: true });
+      } else if (!isAuthenticated) {
+        // If not authenticated, redirect to login page if not on a public path
+        const publicPaths = ["/login", "/register", "/about", "/"];
+        if (!publicPaths.includes(location.pathname)) {
+          navigate("/login", { replace: true });
+        }
       }
     }
   }, [isAuthenticated, loading, location.pathname, navigate]);

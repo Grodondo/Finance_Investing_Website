@@ -18,6 +18,18 @@ export default defineConfig({
       "/api": {
         target: "http://localhost:8000",
         changeOrigin: true,
+        configure: (proxy, options) => {
+          proxy.on('error', (err, req, res) => {
+            // console.log('proxy error', err);
+          });
+          proxy.on('proxyReq', (proxyReq, req, res) => {
+            // console.log('Sending Request to Target:', req.method, req.url);
+            // console.log('  Headers:', proxyReq.getHeaders());
+          });
+          proxy.on('proxyRes', (proxyRes, req, res) => {
+            // console.log('Received Response from Target:', proxyRes.statusCode, req.url);
+          });
+        }
       },
     },
   },

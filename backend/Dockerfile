@@ -18,8 +18,13 @@ COPY . .
 # Add the current directory to PYTHONPATH
 ENV PYTHONPATH=/app
 
+# Make start.sh executable
+COPY start.sh /start.sh
+RUN chmod +x /start.sh
+
 # Expose port
 EXPOSE 8000
 
 # Command to run the application
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"] 
+# CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+CMD ["/start.sh"] 

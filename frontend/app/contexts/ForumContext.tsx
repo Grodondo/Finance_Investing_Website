@@ -98,7 +98,7 @@ interface ForumContextType {
   tags: ForumTag[];
   isAdmin: boolean;
   loadSections: () => Promise<void>;
-  loadTags: () => Promise<void>;
+  loadTags: () => Promise<ForumTag[]>;
   loadPosts: (sectionId?: number, tagId?: number, search?: string, page?: number) => Promise<ForumPostsResponse>;
   loadPost: (postId: number) => Promise<ForumPost>;
   createPost: (formData: FormData) => Promise<ForumPost>;
@@ -129,378 +129,343 @@ export const ForumProvider: React.FC<{children: ReactNode}> = ({ children }) => 
   // Check if user is admin
   const isAdmin = user?.role === 'admin';
 
-  const handleApiError = (error: any) => {
-    setError(error.message || 'An error occurred with the forum API');
-    setLoading(false);
-    throw error;
-  };
+  const handleApiError = useCallback((error: any, defaultMessage: string = 'An error occurred') => {
+    console.error("ForumContext API Error:", error.message, error.response?.data, error.stack);
+    const message = error?.response?.data?.detail || error?.message || defaultMessage;
+    setError(message);
+  }, [setError]);
 
-  // Load all forum sections
-  const loadSections = useCallback(async () => {
+  const loadSections = useCallback(async (): Promise<void> => {
+    console.log('[ForumContext] Attempting to load sections...');
     setLoading(true);
     setError(null);
-    
     try {
       const headers = getAuthHeader();
-      
       if (!headers) {
-        throw new Error('Not authenticated');
+        const authError = new Error('User not authenticated. Please log in.');
+        handleApiError(authError, 'User not authenticated.');
+        throw authError;
       }
-      
-      const response = await fetch('/api/forum/sections', {
-        headers: {
-          ...headers,
-          'Content-Type': 'application/json'
-        }
-      });
-      
+      const response = await fetch('/api/forum/sections', { headers: { ...headers, 'Content-Type': 'application/json' } });
       if (!response.ok) {
-        const errorText = await response.text().catch(() => 'No error details');
-        throw new Error(`Failed to load forum sections: ${response.status}`);
+        const errorData = await response.json().catch(() => ({ detail: `Server error: ${response.status}` }));
+        const apiError = new Error(errorData.detail || `Failed to load sections: ${response.statusText || response.status}`);
+        handleApiError(apiError, apiError.message);
+        throw apiError;
       }
-      
       const data = await response.json();
       setSections(data);
+    } catch (error: any) {
+      if (!error.message.includes("User not authenticated") && !error.message.includes("Failed to load sections")) {
+          handleApiError(error, 'An unexpected error occurred while loading sections.');
+      }
+      throw error;
+    } finally {
       setLoading(false);
-      return data;
-    } catch (error) {
-      return handleApiError(error);
     }
-  }, [getAuthHeader]);
+  }, [getAuthHeader, handleApiError]);
 
-  // Load all forum tags
-  const loadTags = useCallback(async () => {
+  const loadTags = useCallback(async (): Promise<ForumTag[]> => {
+    console.log('[ForumContext] Attempting to load tags...');
     setLoading(true);
     setError(null);
-    
     try {
       const headers = getAuthHeader();
-      if (!headers) throw new Error('Not authenticated');
-      
-      const response = await fetch('/api/forum/tags', {
-        headers: {
-          ...headers,
-          'Content-Type': 'application/json'
-        }
-      });
-      
-      if (!response.ok) {
-        throw new Error(`Failed to load forum tags: ${response.status}`);
+      if (!headers) { 
+        const authError = new Error('User not authenticated.'); 
+        handleApiError(authError, 'User not authenticated.'); 
+        throw authError; 
       }
-      
+      const response = await fetch('/api/forum/tags', { headers: { ...headers, 'Content-Type': 'application/json' } });
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ detail: `Server error: ${response.status}` }));
+        const apiError = new Error(errorData.detail || `Failed to load tags: ${response.statusText || response.status}`);
+        handleApiError(apiError, apiError.message);
+        throw apiError;
+      }
       const data = await response.json();
       setTags(data);
-      setLoading(false);
       return data;
-    } catch (error) {
-      return handleApiError(error);
+    } catch (error: any) {
+      if (!error.message.includes("Failed to load tags") && !error.message.includes("User not authenticated")) {
+          handleApiError(error, 'An unexpected error occurred while loading tags.');
+      }
+      throw error;
+    } finally {
+      setLoading(false);
     }
-  }, [getAuthHeader]);
+  }, [getAuthHeader, handleApiError]);
 
-  // Load posts with optional filtering
-  const loadPosts = useCallback(async (
-    sectionId?: number, 
-    tagId?: number, 
-    search?: string, 
-    page: number = 1
-  ) => {
+  const loadPosts = useCallback(async (sectionId?: number, tagId?: number, search?: string, page: number = 1): Promise<ForumPostsResponse> => {
+    console.log(`[ForumContext] Attempting to load posts (page ${page})...`, { sectionId, tagId, search });
     setLoading(true);
     setError(null);
-    
     try {
       const headers = getAuthHeader();
-      if (!headers) throw new Error('Not authenticated');
-      
+      if (!headers) { 
+        const authError = new Error('User not authenticated.'); 
+        handleApiError(authError, 'User not authenticated.'); 
+        throw authError; 
+      }
       let url = `/api/forum/posts?page=${page}`;
       if (sectionId) url += `&section_id=${sectionId}`;
       if (tagId) url += `&tag_id=${tagId}`;
       if (search) url += `&search=${encodeURIComponent(search)}`;
-      
-      const response = await fetch(url, {
-        headers: {
-          ...headers,
-          'Content-Type': 'application/json'
-        }
-      });
-      
+      const response = await fetch(url, { headers: { ...headers, 'Content-Type': 'application/json' } });
       if (!response.ok) {
-        throw new Error(`Failed to load forum posts: ${response.status}`);
+        const errorData = await response.json().catch(() => ({ detail: `Server error: ${response.status}` }));
+        const apiError = new Error(errorData.detail || `Failed to load posts: ${response.statusText || response.status}`);
+        handleApiError(apiError, apiError.message);
+        throw apiError;
       }
-      
       const data = await response.json();
-      setLoading(false);
       return data as ForumPostsResponse;
-    } catch (error) {
-      return handleApiError(error);
+    } catch (error: any) {
+       if (!error.message.includes("Failed to load posts") && !error.message.includes("User not authenticated")) {
+          handleApiError(error, 'An unexpected error occurred while loading posts.');
+      }
+      throw error;
+    } finally {
+      setLoading(false);
     }
-  }, [getAuthHeader]);
+  }, [getAuthHeader, handleApiError]);
 
   // Load a single post with details
-  const loadPost = useCallback(async (postId: number) => {
+  const loadPost = useCallback(async (postId: number): Promise<ForumPost> => {
+    console.log(`[ForumContext] Attempting to load post ${postId}...`);
     setLoading(true);
     setError(null);
-    
     try {
       const headers = getAuthHeader();
-      if (!headers) throw new Error('Not authenticated');
-      
-      const response = await fetch(`/api/forum/posts/${postId}`, {
-        headers: {
-          ...headers,
-          'Content-Type': 'application/json'
-        }
-      });
-      
-      if (!response.ok) {
-        throw new Error(`Failed to load forum post: ${response.status}`);
+      if (!headers) { 
+        const authError = new Error('User not authenticated.'); 
+        handleApiError(authError, 'User not authenticated.'); 
+        throw authError; 
       }
-      
+      const response = await fetch(`/api/forum/posts/${postId}`, { headers: { ...headers, 'Content-Type': 'application/json' } });
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ detail: `Server error: ${response.status}` }));
+        const apiError = new Error(errorData.detail || `Failed to load post ${postId}: ${response.statusText || response.status}`);
+        handleApiError(apiError, apiError.message);
+        throw apiError;
+      }
       const data = await response.json();
-      setLoading(false);
       return data as ForumPost;
-    } catch (error) {
-      return handleApiError(error);
+    } catch (error: any) {
+      if (!error.message.includes("Failed to load post") && !error.message.includes("User not authenticated")) {
+          handleApiError(error, `An unexpected error occurred while loading post ${postId}.`);
+      }
+      throw error;
+    } finally {
+      setLoading(false);
     }
-  }, [getAuthHeader]);
+  }, [getAuthHeader, handleApiError]);
 
   // Create a new post using FormData (for file uploads)
-  const createPost = useCallback(async (formData: FormData) => {
+  const createPost = useCallback(async (formData: FormData): Promise<ForumPost> => {
+    console.log('[ForumContext] Attempting to create post...');
     setLoading(true);
     setError(null);
-    
     try {
-      const headers = getAuthHeader();
-      if (!headers) throw new Error('Not authenticated');
-      
-      const response = await fetch('/api/forum/posts', {
-        method: 'POST',
-        headers: {
-          ...headers,
-          // Note: Don't set Content-Type for FormData
-        },
-        body: formData
-      });
-      
-      if (!response.ok) {
-        throw new Error(`Failed to create forum post: ${response.status}`);
+      const authHeader = getAuthHeader(); 
+      if (!authHeader?.Authorization) { 
+        const authError = new Error('User not authenticated.'); 
+        handleApiError(authError, 'User not authenticated.'); 
+        throw authError; 
       }
-      
+      // Pass only the Authorization header, browser will set Content-Type for FormData
+      const response = await fetch('/api/forum/posts', { 
+        method: 'POST', 
+        headers: { 'Authorization': authHeader.Authorization }, 
+        body: formData 
+      });
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ detail: `Server error: ${response.status}` }));
+        const apiError = new Error(errorData.detail || `Failed to create post: ${response.statusText || response.status}`);
+        handleApiError(apiError, apiError.message);
+        throw apiError;
+      }
       const data = await response.json();
-      setLoading(false);
       return data as ForumPost;
-    } catch (error) {
-      return handleApiError(error);
+    } catch (error: any) {
+      if (!error.message.includes("Failed to create post") && !error.message.includes("User not authenticated")) {
+          handleApiError(error, 'An unexpected error occurred while creating the post.');
+      }
+      throw error;
+    } finally {
+      setLoading(false);
     }
-  }, [getAuthHeader]);
+  }, [getAuthHeader, handleApiError, setLoading, setError]);
 
   // Update an existing post
-  const updatePost = useCallback(async (postId: number, formData: FormData) => {
-    setLoading(true);
-    setError(null);
-    
+  const updatePost = useCallback(async (postId: number, formData: FormData): Promise<ForumPost> => {
+    setLoading(true); setError(null);
     try {
-      const headers = getAuthHeader();
-      if (!headers) throw new Error('Not authenticated');
-      
-      const response = await fetch(`/api/forum/posts/${postId}`, {
-        method: 'PUT',
-        headers: {
-          ...headers,
-          // Note: Don't set Content-Type for FormData
-        },
-        body: formData
+      const authHeader = getAuthHeader();
+      if (!authHeader?.Authorization) { const err = new Error('User not authenticated'); handleApiError(err); throw err; }
+      // Pass only the Authorization header, browser will set Content-Type for FormData
+      const response = await fetch(`/api/forum/posts/${postId}`, { 
+        method: 'PUT', 
+        headers: { 'Authorization': authHeader.Authorization }, 
+        body: formData 
       });
-      
-      if (!response.ok) {
-        throw new Error(`Failed to update forum post: ${response.status}`);
+      if (!response.ok) { 
+        const errorData = await response.json().catch(() => ({ detail: `Server error: ${response.status}` }));
+        const err = new Error(errorData.detail || `Update post failed: ${response.status}`); 
+        handleApiError(err, err.message); 
+        throw err; 
       }
-      
-      const data = await response.json();
-      setLoading(false);
-      return data as ForumPost;
-    } catch (error) {
-      return handleApiError(error);
-    }
-  }, [getAuthHeader]);
+      return await response.json() as ForumPost;
+    } catch (e: any) { 
+      if (!e.message.includes("Update post failed") && !e.message.includes("User not authenticated")) handleApiError(e, 'Update post error'); 
+      throw e; 
+    } finally { setLoading(false); }
+  }, [getAuthHeader, handleApiError]);
 
   // Delete a post
-  const deletePost = useCallback(async (postId: number) => {
-    setLoading(true);
-    setError(null);
-    
+  const deletePost = useCallback(async (postId: number): Promise<void> => {
+    setLoading(true); setError(null);
     try {
       const headers = getAuthHeader();
-      if (!headers) throw new Error('Not authenticated');
-      
-      const response = await fetch(`/api/forum/posts/${postId}`, {
-        method: 'DELETE',
-        headers: {
-          ...headers,
-          'Content-Type': 'application/json'
-        }
-      });
-      
-      if (!response.ok) {
-        throw new Error(`Failed to delete forum post: ${response.status}`);
+      if (!headers) { const err = new Error('User not authenticated'); handleApiError(err); throw err; }
+      const response = await fetch(`/api/forum/posts/${postId}`, { method: 'DELETE', headers });
+      if (!response.ok) { 
+        const errorData = await response.json().catch(() => ({ detail: `Server error: ${response.status}` }));
+        const err = new Error(errorData.detail || `Delete post failed: ${response.status}`); 
+        handleApiError(err, err.message); 
+        throw err; 
       }
-      
-      setLoading(false);
-    } catch (error) {
-      return handleApiError(error);
-    }
-  }, [getAuthHeader]);
+    } catch (e: any) { 
+      if (!e.message.includes("Delete post failed") && !e.message.includes("User not authenticated")) handleApiError(e, 'Delete post error'); 
+      throw e; 
+    } finally { setLoading(false); }
+  }, [getAuthHeader, handleApiError]);
 
   // Toggle like on a post
-  const toggleLikePost = useCallback(async (postId: number) => {
+  const toggleLikePost = useCallback(async (postId: number): Promise<{ like_count: number, is_liked: boolean }> => {
+    setLoading(true); setError(null);
     try {
       const headers = getAuthHeader();
-      if (!headers) throw new Error('Not authenticated');
-      
-      const response = await fetch(`/api/forum/posts/${postId}/like`, {
-        method: 'POST',
-        headers: {
-          ...headers,
-          'Content-Type': 'application/json'
-        }
-      });
-      
-      if (!response.ok) {
-        throw new Error(`Failed to toggle post like: ${response.status}`);
+      if (!headers) { const err = new Error('User not authenticated'); handleApiError(err); throw err; }
+      const response = await fetch(`/api/forum/posts/${postId}/like`, { method: 'POST', headers: { ...headers, 'Content-Type': 'application/json' } });
+      if (!response.ok) { 
+        const errorData = await response.json().catch(() => ({ detail: `Server error: ${response.status}` }));
+        const err = new Error(errorData.detail || `Toggle like failed: ${response.status}`); 
+        handleApiError(err, err.message); 
+        throw err; 
       }
-      
-      const data = await response.json();
-      return { like_count: data.like_count, is_liked: data.is_liked };
-    } catch (error) {
-      return handleApiError(error);
-    }
-  }, [getAuthHeader]);
+      return await response.json();
+    } catch (e: any) { 
+      if (!e.message.includes("Toggle like failed") && !e.message.includes("User not authenticated")) handleApiError(e, 'Toggle like error'); 
+      throw e; 
+    } finally { setLoading(false); }
+  }, [getAuthHeader, handleApiError]);
 
   // Toggle pin status on a post (admin only)
-  const togglePinPost = useCallback(async (postId: number) => {
+  const togglePinPost = useCallback(async (postId: number): Promise<void> => {
+    setLoading(true); setError(null);
     try {
       const headers = getAuthHeader();
-      if (!headers) throw new Error('Not authenticated');
-      
-      const response = await fetch(`/api/forum/posts/${postId}/pin`, {
-        method: 'POST',
-        headers: {
-          ...headers,
-          'Content-Type': 'application/json'
-        }
-      });
-      
-      if (!response.ok) {
-        throw new Error(`Failed to toggle post pin status: ${response.status}`);
+      if (!headers) { const err = new Error('User not authenticated'); handleApiError(err); throw err; }
+      const response = await fetch(`/api/forum/posts/${postId}/pin`, { method: 'POST', headers: { ...headers, 'Content-Type': 'application/json' } });
+      if (!response.ok) { 
+        const errorData = await response.json().catch(() => ({ detail: `Server error: ${response.status}` }));
+        const err = new Error(errorData.detail || `Toggle pin failed: ${response.status}`); 
+        handleApiError(err, err.message); 
+        throw err; 
       }
-      
-      await response.json();
-    } catch (error) {
-      return handleApiError(error);
-    }
-  }, [getAuthHeader]);
+    } catch (e: any) { 
+      if (!e.message.includes("Toggle pin failed") && !e.message.includes("User not authenticated")) handleApiError(e, 'Toggle pin error'); 
+      throw e; 
+    } finally { setLoading(false); }
+  }, [getAuthHeader, handleApiError]);
 
   // Create a new comment
-  const createComment = useCallback(async (postId: number, content: string, parentId?: number) => {
+  const createComment = useCallback(async (postId: number, content: string, parentId?: number): Promise<ForumComment> => {
+    setLoading(true); setError(null);
     try {
       const headers = getAuthHeader();
-      if (!headers) throw new Error('Not authenticated');
-      
-      const response = await fetch('/api/forum/comments', {
-        method: 'POST',
-        headers: {
-          ...headers,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          post_id: postId,
-          content,
-          parent_id: parentId || null
-        })
+      if (!headers) { const err = new Error('User not authenticated'); handleApiError(err); throw err; }
+      const response = await fetch('/api/forum/comments', { 
+        method: 'POST', 
+        headers: { ...headers, 'Content-Type': 'application/json' }, 
+        body: JSON.stringify({ post_id: postId, content, parent_id: parentId }) 
       });
-      
-      if (!response.ok) {
-        throw new Error(`Failed to create comment: ${response.status}`);
+      if (!response.ok) { 
+        const errorData = await response.json().catch(() => ({ detail: `Server error: ${response.status}` }));
+        const err = new Error(errorData.detail || `Create comment failed: ${response.status}`); 
+        handleApiError(err, err.message); 
+        throw err; 
       }
-      
-      const data = await response.json();
-      return data as ForumComment;
-    } catch (error) {
-      return handleApiError(error);
-    }
-  }, [getAuthHeader]);
+      return await response.json();
+    } catch (e: any) { 
+      if (!e.message.includes("Create comment failed") && !e.message.includes("User not authenticated")) handleApiError(e, 'Create comment error'); 
+      throw e; 
+    } finally { setLoading(false); }
+  }, [getAuthHeader, handleApiError]);
 
   // Update an existing comment
-  const updateComment = useCallback(async (commentId: number, content: string) => {
+  const updateComment = useCallback(async (commentId: number, content: string): Promise<ForumComment> => {
+    setLoading(true); setError(null);
     try {
       const headers = getAuthHeader();
-      if (!headers) throw new Error('Not authenticated');
-      
-      const response = await fetch(`/api/forum/comments/${commentId}`, {
-        method: 'PUT',
-        headers: {
-          ...headers,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({ content })
+      if (!headers) { const err = new Error('User not authenticated'); handleApiError(err); throw err; }
+      const response = await fetch(`/api/forum/comments/${commentId}`, { 
+        method: 'PUT', 
+        headers: { ...headers, 'Content-Type': 'application/json' }, 
+        body: JSON.stringify({ content }) 
       });
-      
-      if (!response.ok) {
-        throw new Error(`Failed to update comment: ${response.status}`);
+      if (!response.ok) { 
+        const errorData = await response.json().catch(() => ({ detail: `Server error: ${response.status}` }));
+        const err = new Error(errorData.detail || `Update comment failed: ${response.status}`); 
+        handleApiError(err, err.message); 
+        throw err; 
       }
-      
-      const data = await response.json();
-      return data as ForumComment;
-    } catch (error) {
-      return handleApiError(error);
-    }
-  }, [getAuthHeader]);
+      return await response.json();
+    } catch (e: any) { 
+      if (!e.message.includes("Update comment failed") && !e.message.includes("User not authenticated")) handleApiError(e, 'Update comment error'); 
+      throw e; 
+    } finally { setLoading(false); }
+  }, [getAuthHeader, handleApiError]);
 
   // Delete a comment
-  const deleteComment = useCallback(async (commentId: number) => {
+  const deleteComment = useCallback(async (commentId: number): Promise<void> => {
+    setLoading(true); setError(null);
     try {
       const headers = getAuthHeader();
-      if (!headers) throw new Error('Not authenticated');
-      
-      const response = await fetch(`/api/forum/comments/${commentId}`, {
-        method: 'DELETE',
-        headers: {
-          ...headers,
-          'Content-Type': 'application/json'
-        }
-      });
-      
-      if (!response.ok) {
-        throw new Error(`Failed to delete comment: ${response.status}`);
+      if (!headers) { const err = new Error('User not authenticated'); handleApiError(err); throw err; }
+      const response = await fetch(`/api/forum/comments/${commentId}`, { method: 'DELETE', headers });
+      if (!response.ok) { 
+        const errorData = await response.json().catch(() => ({ detail: `Server error: ${response.status}` }));
+        const err = new Error(errorData.detail || `Delete comment failed: ${response.status}`); 
+        handleApiError(err, err.message); 
+        throw err; 
       }
-    } catch (error) {
-      return handleApiError(error);
-    }
-  }, [getAuthHeader]);
+    } catch (e: any) { 
+      if (!e.message.includes("Delete comment failed") && !e.message.includes("User not authenticated")) handleApiError(e, 'Delete comment error'); 
+      throw e; 
+    } finally { setLoading(false); }
+  }, [getAuthHeader, handleApiError]);
 
   // Toggle like on a comment
-  const toggleLikeComment = useCallback(async (commentId: number) => {
+  const toggleLikeComment = useCallback(async (commentId: number): Promise<{ like_count: number, is_liked: boolean }> => {
+    setLoading(true); setError(null);
     try {
       const headers = getAuthHeader();
-      if (!headers) throw new Error('Not authenticated');
-      
-      const response = await fetch(`/api/forum/comments/${commentId}/like`, {
-        method: 'POST',
-        headers: {
-          ...headers,
-          'Content-Type': 'application/json'
-        }
-      });
-      
-      if (!response.ok) {
-        throw new Error(`Failed to toggle comment like: ${response.status}`);
+      if (!headers) { const err = new Error('User not authenticated'); handleApiError(err); throw err; }
+      const response = await fetch(`/api/forum/comments/${commentId}/like`, { method: 'POST', headers: { ...headers, 'Content-Type': 'application/json' } });
+      if (!response.ok) { 
+        const errorData = await response.json().catch(() => ({ detail: `Server error: ${response.status}` }));
+        const err = new Error(errorData.detail || `Like comment failed: ${response.status}`); 
+        handleApiError(err, err.message); 
+        throw err; 
       }
-      
-      const data = await response.json();
-      return { like_count: data.like_count, is_liked: data.is_liked };
-    } catch (error) {
-      return handleApiError(error);
-    }
-  }, [getAuthHeader]);
+      return await response.json();
+    } catch (e: any) { 
+      if (!e.message.includes("Like comment failed") && !e.message.includes("User not authenticated")) handleApiError(e, 'Like comment error'); 
+      throw e; 
+    } finally { setLoading(false); }
+  }, [getAuthHeader, handleApiError]);
 
   // Report a post or comment
   const reportContent = useCallback(async (
@@ -508,86 +473,66 @@ export const ForumProvider: React.FC<{children: ReactNode}> = ({ children }) => 
     details: string, 
     postId?: number, 
     commentId?: number
-  ) => {
+  ): Promise<void> => {
+    setLoading(true); setError(null);
     try {
       const headers = getAuthHeader();
-      if (!headers) throw new Error('Not authenticated');
-      
-      if (!postId && !commentId) {
-        throw new Error('Either postId or commentId must be provided');
-      }
-      
-      const response = await fetch('/api/forum/reports', {
-        method: 'POST',
-        headers: {
-          ...headers,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          reason,
-          details,
-          post_id: postId || null,
-          comment_id: commentId || null
-        })
+      if (!headers) { const err = new Error('User not authenticated'); handleApiError(err); throw err; }
+      const response = await fetch('/api/forum/reports', { 
+        method: 'POST', 
+        headers: { ...headers, 'Content-Type': 'application/json' }, 
+        body: JSON.stringify({ reason, details, post_id: postId, comment_id: commentId }) 
       });
-      
-      if (!response.ok) {
-        throw new Error(`Failed to report content: ${response.status}`);
+      if (!response.ok) { 
+        const errorData = await response.json().catch(() => ({ detail: `Server error: ${response.status}` }));
+        const err = new Error(errorData.detail || `Report content failed: ${response.status}`); 
+        handleApiError(err, err.message); 
+        throw err; 
       }
-    } catch (error) {
-      return handleApiError(error);
-    }
-  }, [getAuthHeader]);
+    } catch (e: any) { 
+      if (!e.message.includes("Report content failed") && !e.message.includes("User not authenticated")) handleApiError(e, 'Report content error'); 
+      throw e; 
+    } finally { setLoading(false); }
+  }, [getAuthHeader, handleApiError]);
 
   // Load reports (admin only)
-  const loadReports = useCallback(async (resolved?: boolean) => {
+  const loadReports = useCallback(async (resolved?: boolean): Promise<ForumReport[]> => {
+    setLoading(true); setError(null);
     try {
       const headers = getAuthHeader();
-      if (!headers) throw new Error('Not authenticated');
-      
-      let url = '/api/forum/reports';
-      if (resolved !== undefined) url += `?resolved=${resolved}`;
-      
-      const response = await fetch(url, {
-        headers: {
-          ...headers,
-          'Content-Type': 'application/json'
-        }
-      });
-      
-      if (!response.ok) {
-        throw new Error(`Failed to load reports: ${response.status}`);
+      if (!headers) { const err = new Error('User not authenticated'); handleApiError(err); throw err; }
+      const response = await fetch(`/api/forum/reports${resolved !== undefined ? `?resolved=${resolved}` : ''}`, { headers });
+      if (!response.ok) { 
+        const errorData = await response.json().catch(() => ({ detail: `Server error: ${response.status}` }));
+        const err = new Error(errorData.detail || `Load reports failed: ${response.status}`); 
+        handleApiError(err, err.message); 
+        throw err; 
       }
-      
-      const data = await response.json();
-      return data as ForumReport[];
-    } catch (error) {
-      return handleApiError(error);
-    }
-  }, [getAuthHeader]);
+      return await response.json() as ForumReport[];
+    } catch (e: any) { 
+      if (!e.message.includes("Load reports failed") && !e.message.includes("User not authenticated")) handleApiError(e, 'Load reports error');
+      throw e; 
+    } finally { setLoading(false); }
+  }, [getAuthHeader, handleApiError]);
 
   // Resolve a report (admin only)
-  const resolveReport = useCallback(async (reportId: number) => {
+  const resolveReport = useCallback(async (reportId: number): Promise<void> => {
+    setLoading(true); setError(null);
     try {
       const headers = getAuthHeader();
-      if (!headers) throw new Error('Not authenticated');
-      
-      const response = await fetch(`/api/forum/reports/${reportId}`, {
-        method: 'PUT',
-        headers: {
-          ...headers,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({ is_resolved: true })
-      });
-      
-      if (!response.ok) {
-        throw new Error(`Failed to resolve report: ${response.status}`);
+      if (!headers) { const err = new Error('User not authenticated'); handleApiError(err); throw err; }
+      const response = await fetch(`/api/forum/reports/${reportId}/resolve`, { method: 'PATCH', headers });
+      if (!response.ok) { 
+        const errorData = await response.json().catch(() => ({ detail: `Server error: ${response.status}` }));
+        const err = new Error(errorData.detail || `Resolve report failed: ${response.status}`); 
+        handleApiError(err, err.message); 
+        throw err; 
       }
-    } catch (error) {
-      return handleApiError(error);
-    }
-  }, [getAuthHeader]);
+    } catch (e: any) { 
+      if (!e.message.includes("Resolve report failed") && !e.message.includes("User not authenticated")) handleApiError(e, 'Resolve report error');
+      throw e; 
+    } finally { setLoading(false); }
+  }, [getAuthHeader, handleApiError]);
 
   const value = {
     sections,

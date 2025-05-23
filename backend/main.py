@@ -26,7 +26,7 @@ logging.getLogger("uvicorn").propagate = True
 load_dotenv()
 
 # Create database tables
-Base.metadata.create_all(bind=engine)
+# Base.metadata.create_all(bind=engine) # Commented out
 
 app = FastAPI(
     title="AI-Powered Personal Finance Manager",
@@ -61,6 +61,7 @@ from app.routes.investing import router as investing_router
 from app.routes.news import router as news_router
 from app.routes.forum import router as forum_router
 from app.routes.stock_ai import router as stock_ai_router
+from app.routes.notification import router as notification_router
 
 app.include_router(auth_router, prefix="/api/auth", tags=["auth"])
 app.include_router(transactions_router, prefix="/api", tags=["transactions"])
@@ -69,6 +70,7 @@ app.include_router(investing_router, prefix="/api", tags=["investing"])
 app.include_router(news_router, prefix="/api/news", tags=["news"])
 app.include_router(forum_router, prefix="/api", tags=["forum"])
 app.include_router(stock_ai_router, prefix="/api", tags=["stock-ai"])
+app.include_router(notification_router, prefix="/api", tags=["notifications"])
 
 @app.get("/")
 async def root():

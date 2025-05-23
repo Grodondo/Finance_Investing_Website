@@ -2,6 +2,7 @@ from sqlalchemy import Boolean, Column, Integer, String, Enum
 from sqlalchemy.orm import relationship
 import enum
 from ..db.database import Base
+from .notification import Notification
 
 class UserRole(str, enum.Enum):
     ADMIN = "admin"
@@ -16,6 +17,7 @@ class User(Base):
     hashed_password = Column(String)
     is_active = Column(Boolean, default=True)
     role = Column(String, default="user")
+    profile_picture_url = Column(String, nullable=True)
     
     # Relationships
     transactions = relationship("Transaction", back_populates="user")
@@ -31,3 +33,4 @@ class User(Base):
     forum_images = relationship("ForumImage", back_populates="user")
     forum_reports = relationship("ForumReport", foreign_keys="[ForumReport.user_id]", back_populates="user")
     resolved_reports = relationship("ForumReport", foreign_keys="[ForumReport.resolved_by]", back_populates="resolver") 
+    notifications = relationship(Notification, foreign_keys=[Notification.user_id], back_populates="user", cascade="all, delete-orphan") 

@@ -4,6 +4,10 @@ from typing import Optional
 class UserBase(BaseModel):
     email: EmailStr
     username: str
+    profile_picture_url: Optional[str] = None
+
+    class Config:
+        orm_mode = True
 
 class UserCreate(UserBase):
     password: str
